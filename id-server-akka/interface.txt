@@ -1,0 +1,9 @@
+create(loginid, name, password): POST
+modify(loginid, name, new_name, password): POST
+delete(loginid, password): POST
+
+getAll: GET
+getUsers: GET
+getUUIDs: GET
+loginid_lookup: GET
+UUID_lookup: GET
