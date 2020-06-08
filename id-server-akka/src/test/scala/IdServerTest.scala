@@ -6,6 +6,7 @@ import org.scalatest.wordspec.AnyWordSpec
 import scala.util.Random
 
 final class IdServerTest extends AnyWordSpec with Matchers with BeforeAndAfterAll {
+  /*
   private[this] val tk = ActorTestKit()
   import tk._
 
@@ -73,4 +74,5 @@ final class IdServerTest extends AnyWordSpec with Matchers with BeforeAndAfterAl
     ids ! GetUuids(probe.ref, reqId)
     probe.expectMessage(GetUuidsResponse(reqId, Seq(2, 3, 5, 7, 11, 13, 17, 19)))
   }
+  */
 }
