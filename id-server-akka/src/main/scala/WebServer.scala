@@ -1,4 +1,4 @@
-import akka.actor.typed.ActorSystem
+import akka.actor.typed.{ActorRef, ActorSystem}
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.HttpMethods._
@@ -9,27 +9,28 @@ import akka.util.Timeout
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.{Failure, Success}
-
 import IdServer._
 
-object WebServer extends App {
-  new WebServer(8080, 1)
-}
-
-final class WebServer(port: Int, reqTimeout: Int) {
+final class WebServer(
+  val interface: String,
+  val port: Int,
+  system: ActorSystem[Nothing],
+  server: ActorRef[Message[_]],
+  reqTimeout: Int
+) {
 
   private[this] implicit val timeout: Timeout = reqTimeout.second
-  private[this] implicit val system: ActorSystem[IdServer.Message] =
-    ActorSystem(IdServer("Jane"), "MySystem")
+  private[this] implicit val s: ActorSystem[Nothing] = system
   private[this] implicit val ec: ExecutionContextExecutor = system.executionContext
 
-  Http(system).bind(interface = "localhost", port = port)
+  Http(system)
+    .bind(interface = interface, port = port)
     .to(Sink.foreach { connection =>
       println("Accepted new connection from " + connection.remoteAddress)
       connection.handleWithAsyncHandler(requestHandler)
     }).run()
 
-  private[this] def requestHandler(req: HttpRequest) =
+  private[this] def requestHandler(req: HttpRequest): Future[HttpResponse] =
     (req.method, req.uri.path.toString) match {
       case (GET, "/get-all") => getAll(req)
       case (GET, "/get-users") => getUsers(req)
@@ -41,12 +42,14 @@ final class WebServer(port: Int, reqTimeout: Int) {
 
   private[this] def getAll(req: HttpRequest) = Future {
     if (req.uri.query().isEmpty)
-      system.ref.ask[GetAllResponse](GetAll)
+      server.ask[Message[GetAllResponse]](GetAll)
         .transform {
           case Success(res) => Success(
             HttpResponse(entity = s"good request: () -> $res")
           )
-          case Failure(_) => Success(HttpResponse(entity = "server error"))
+          case Failure(e) => Success(
+            HttpResponse(entity = s"server error: ${e.getMessage}")
+          )
         }
     else
       Future(HttpResponse(entity = "bad request"))
@@ -54,12 +57,14 @@ final class WebServer(port: Int, reqTimeout: Int) {
 
   private[this] def getUsers(req: HttpRequest) = Future {
     if (req.uri.query().isEmpty)
-      system.ref.ask[GetUsersResponse](GetUsers)
+      server.ask[Message[GetUsersResponse]](GetUsers)
         .transform {
           case Success(res) => Success(
             HttpResponse(entity = s"good request: () -> $res")
           )
-          case Failure(_) => Success(HttpResponse(entity = "server error"))
+          case Failure(e) => Success(
+            HttpResponse(entity = s"server error: ${e.getMessage}")
+          )
         }
     else
       Future(HttpResponse(entity = "bad request"))
@@ -67,7 +72,7 @@ final class WebServer(port: Int, reqTimeout: Int) {
 
   private[this] def getUuids(req: HttpRequest) = Future {
     if (req.uri.query().isEmpty)
-      system.ref.ask[GetUuidsResponse](GetUuids)
+      server.ask[Message[GetUuidsResponse]](GetUuids)
         .transform {
           case Success(res) => Success(
             HttpResponse(entity = s"good request: () -> $res")
@@ -84,7 +89,7 @@ final class WebServer(port: Int, reqTimeout: Int) {
     val query = req.uri.query().toMultiMap
     if (query.keySet == Set("login") && query("login").length == 1) {
       val params = LoginLookup(query("login").head)
-      system.ref.ask[LoginLookupResponse](LoginLookupInternal(_, params))
+      server.ask[Message[LoginLookupResponse]](LoginLookupInternal(_, params))
         .transform {
           case Success(res) => Success(
             HttpResponse(entity = s"good request: $params -> $res")
@@ -102,7 +107,7 @@ final class WebServer(port: Int, reqTimeout: Int) {
     if (query.keySet == Set("uuid") && query("uuid").length == 1
       && query("uuid").head.toLongOption.nonEmpty) {
       val params = UuidLookup(query("uuid").head.toInt)
-      system.ref.ask[UuidLookupResponse](UuidLookupInternal(_, params))
+      server.ask[Message[UuidLookupResponse]](UuidLookupInternal(_, params))
         .transform {
           case Success(res) => Success(
             HttpResponse(entity = s"good request: $params -> $res")

@@ -1,12 +1,26 @@
 import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
-import akka.actor.typed.{ActorRef, Behavior}
+import akka.actor.typed.{ActorRef, ActorSystem, Behavior, Scheduler}
 import java.security.SecureRandom
+
+import akka.actor.typed.scaladsl.AskPattern._
 import org.apache.commons.lang3.RandomStringUtils.random
 import com.google.common.hash.Hashing.sha512
 import java.nio.charset.StandardCharsets.US_ASCII
-import spray.json._
 
+import scala.concurrent.duration._
+import spray.json._
 import IdServer._
+import akka.actor.typed.pubsub.Topic
+import akka.actor.typed.receptionist.{Receptionist, ServiceKey}
+import akka.actor.typed.receptionist.Receptionist._
+import java.net.InetAddress
+
+import akka.util.Timeout
+
+import scala.collection.Set
+import scala.collection.immutable.Set
+import scala.concurrent.{Await, ExecutionContextExecutor, Future}
+import scala.util.{Failure, Success, Try}
 
 case class User(
   login: String,
@@ -18,129 +32,232 @@ case class User(
 
 object IdServer {
 
-  private[this] val rand = new SecureRandom
+  private val allNodes = ServiceKey[Message[_]]("spare-key")
+  private val coorKey = ServiceKey[Message[_]]("coor-key")
+
+  private val rand = new SecureRandom
   private[this] val saltLen = 16
 
-  sealed abstract class Message {
-    private[IdServer] def process(ids: IdServer): Behavior[Message] = ids
+  sealed abstract class Message[+A] {
+    private[IdServer] def process(ids: IdServer): Unit = validReq(ids)
+    private[IdServer] def validReq(ids: IdServer): Unit = ()
+    private[IdServer] def notTheCoor(hs: HttpServer): Unit = ()
   }
 
-  object MessageJsonProtocol extends DefaultJsonProtocol {
-    implicit val userFormat           = jsonFormat5(User)
-    implicit val createFormat         = jsonFormat3(Create)
-    implicit val createResponseFormat = jsonFormat2(CreateResponse)
-    implicit val modifyFormat         = jsonFormat3(Modify)
-    implicit val modifyResponseFormat = jsonFormat1(ModifyResponse)
-    implicit val deleteFormat         = jsonFormat2(Delete)
-    implicit val deleteResponseFormat = jsonFormat1(DeleteResponse)
-    implicit val loginFormat          = jsonFormat1(LoginLookup)
-    implicit val loginResponseFormat  = jsonFormat1(LoginLookupResponse)
-    implicit val uuidFormat           = jsonFormat1(UuidLookup)
-    implicit val uuidResponseFormat   = jsonFormat1(UuidLookupResponse)
-    implicit val allResponseFormat    = jsonFormat1(GetAllResponse)
-    implicit val usersResponseFormat  = jsonFormat1(GetUsersResponse)
-    implicit val uuidsResponseFormat  = jsonFormat1(GetUuidsResponse)
+  sealed abstract class External[+A] extends Message[A] {
+    @scala.annotation.tailrec
+    final private[IdServer] override def process(ids: IdServer): Unit = {
+      import ids._
+      val coor = Await.result(system.receptionist.ask[Listing](Find(coorKey, _)), electTO)
+      coor.serviceInstances(coorKey).toSeq match {
+        case Seq() =>
+          newCoor(ids).foreach { value =>
+            Await.ready(system.receptionist.ask[Registered](Register(coorKey, value, _)), electTO)
+          }
+          process(ids)
+        case coors =>
+          if (coors.head == context.self) {
+            validReq(ids)
+          } else {
+            notTheCoor(Await.result(coors.head.ask[HttpServer](GetHttp), electTO))
+          }
+          coors.drop(1).map(actor =>
+            system.receptionist.ask[Deregistered](Deregister(coorKey, actor, _))
+          ).foreach(Await.ready(_, electTO))
+      }
+    }
+
+    private[this] def newCoor(ids: IdServer): Try[ActorRef[Message[_]]] = Try {
+      import ids._
+      val f = system.receptionist.ask[Listing](Find(allNodes, _)).map {
+        _.serviceInstances(allNodes).maxBy { node =>
+          val hs = Await.result(node.ask[HttpServer](GetHttp), electTO)
+          val x = hs.host.split("\\.").map(_.toLong)
+          (x(0)<<40) | (x(1)<<32) | (x(2)<<24) | (x(3)<<16) | (hs.port & 0xffff)
+        }
+      }
+      Await.result(f, electTO)
+    }
+  }
+
+  final case class IAmNotTheCoor(hs: HttpServer) extends Message[Nothing]
+
+  final case class HttpServer(host: String, port: Int)
+    extends Message[HttpServer]
+  final case class GetHttp(sender: ActorRef[HttpServer])
+    extends Message[GetHttp] {
+    private[IdServer] override def validReq(ids: IdServer): Unit = {
+      sender ! HttpServer(InetAddress.getLocalHost.getHostAddress, ids.httpPort)
+    }
   }
 
   final case class CreateResponse(uuid: Option[Long], msg: String)
-    extends Message
+    extends Message[CreateResponse]
   final case class Create(login: String, name: String, passw: String)
-  final case class CreateInternal(sender: ActorRef[CreateResponse], req: Create)
-    extends Message {
-    private[IdServer] override def process(ids: IdServer): Behavior[Message] = {
+  final case class CreateInternal(sender: ActorRef[Message[CreateResponse]], req: Create)
+    extends External[CreateInternal] {
+    private[IdServer] override def validReq(ids: IdServer): Unit = {
       val u = User(req.login, req.name, 12, "hash", "salt")
       // sha512.hashString(passw, US_ASCII).toString
       // random(saltLen, 0, 0, false, false, null, rand)
       sender ! CreateResponse(Some(u.uuid), s"Created $u")
-      ids
     }
+
+    private[IdServer] override def notTheCoor(hs: HttpServer): Unit =
+      sender ! IAmNotTheCoor(hs)
   }
 
-  final case class ModifyResponse(msg: String) extends Message
+  final case class ModifyResponse(msg: String) extends Message[ModifyResponse]
   final case class Modify(login: String, newName: String, passw: String)
-  final case class ModifyInternal(sender: ActorRef[ModifyResponse], req: Modify)
-    extends Message {
-    private[IdServer] override def process(ids: IdServer): Behavior[Message] = {
+  final case class ModifyInternal(sender: ActorRef[Message[ModifyResponse]], req: Modify)
+    extends External[ModifyInternal] {
+    private[IdServer] override def validReq(ids: IdServer): Unit = {
       ids.context.log.info("Modify received, request id is {}", req)
       sender ! ModifyResponse("failure")
       ids.context.log.info("ModifyResponse sent")
-      ids
     }
+
+    private[IdServer] override def notTheCoor(hs: HttpServer): Unit =
+      sender ! IAmNotTheCoor(hs)
   }
 
-  final case class DeleteResponse(msg: String) extends Message
+  final case class DeleteResponse(msg: String) extends Message[DeleteResponse]
   case class Delete(login: String, passw: String)
-  final case class DeleteInternal(sender: ActorRef[DeleteResponse], req: Delete)
-    extends Message {
-    private[IdServer] override def process(ids: IdServer): Behavior[Message] = {
+  final case class DeleteInternal(sender: ActorRef[Message[DeleteResponse]], req: Delete)
+    extends External[DeleteInternal] {
+    private[IdServer] override def validReq(ids: IdServer): Unit = {
       sender ! DeleteResponse("failure")
-      ids
     }
+
+    private[IdServer] override def notTheCoor(hs: HttpServer): Unit =
+      sender ! IAmNotTheCoor(hs)
   }
 
-  final case class LoginLookupResponse(user: User) extends Message
+  final case class LoginLookupResponse(user: User) extends Message[LoginLookupResponse]
   final case class LoginLookup(login: String)
   final case class LoginLookupInternal(
-    sender: ActorRef[LoginLookupResponse],
+    sender: ActorRef[Message[LoginLookupResponse]],
     req: LoginLookup
-  ) extends Message {
-    private[IdServer] override def process(ids: IdServer): Behavior[Message] = {
+  ) extends External[LoginLookupInternal] {
+    private[IdServer] override def validReq(ids: IdServer): Unit = {
       sender ! LoginLookupResponse(User(req.login, "doe", 0, "foo", "bar"))
-      ids
     }
+
+    private[IdServer] override def notTheCoor(hs: HttpServer): Unit =
+      sender ! IAmNotTheCoor(hs)
   }
 
-  final case class UuidLookupResponse(user: User) extends Message
+  final case class UuidLookupResponse(user: User) extends Message[UuidLookupResponse]
   final case class UuidLookup(uuid: Long)
   final case class UuidLookupInternal(
-    sender: ActorRef[UuidLookupResponse],
+    sender: ActorRef[Message[UuidLookupResponse]],
     req: UuidLookup
-  ) extends Message {
-    private[IdServer] override def process(ids: IdServer): Behavior[Message] = {
+  ) extends External[UuidLookupInternal] {
+    private[IdServer] override def validReq(ids: IdServer): Unit = {
       sender ! UuidLookupResponse(User("chocolate", "cake", req.uuid, "is", "good"))
-      ids
     }
+
+    private[IdServer] override def notTheCoor(hs: HttpServer): Unit =
+      sender ! IAmNotTheCoor(hs)
   }
 
   final case class GetAllResponse(users: Seq[User])
-    extends  Message
-  final case class GetAll(sender: ActorRef[GetAllResponse])
-    extends Message {
-    private[IdServer] override def process(ids: IdServer): Behavior[Message] = {
+    extends  Message[GetAllResponse]
+  final case class GetAll(sender: ActorRef[Message[GetAllResponse]])
+    extends External[GetAll] {
+    private[IdServer] override def validReq(ids: IdServer): Unit = {
       sender ! GetAllResponse(Seq(
         User("zelda", "really", 2, "likes", "pringles"),
         User("snails", "move", 3, "rather", "slowly")
       ))
-      ids
     }
+
+    private[IdServer] override def notTheCoor(hs: HttpServer): Unit =
+      sender ! IAmNotTheCoor(hs)
   }
 
   final case class GetUsersResponse(users: Seq[String])
-    extends Message
-  final case class GetUsers(sender: ActorRef[GetUsersResponse])
-    extends Message {
-    private[IdServer] override def process(ids: IdServer): Behavior[Message] = {
+    extends Message[GetUsersResponse]
+  final case class GetUsers(sender: ActorRef[Message[GetUsersResponse]])
+    extends External[GetUsers] {
+    private[IdServer] override def validReq(ids: IdServer): Unit = {
       sender ! GetUsersResponse(Seq("the", "cloud", "is", "my", "butt"))
-      ids
     }
+
+    private[IdServer] override def notTheCoor(hs: HttpServer): Unit =
+      sender ! IAmNotTheCoor(hs)
   }
 
   final case class GetUuidsResponse(users: Seq[Long])
-    extends Message
-  final case class GetUuids(sender: ActorRef[GetUuidsResponse])
-    extends Message {
-    private[IdServer] override def process(ids: IdServer): Behavior[Message] = {
+    extends Message[GetUuidsResponse]
+  final case class GetUuids(sender: ActorRef[Message[GetUuidsResponse]])
+    extends External[GetUuids] {
+    private[IdServer] override def validReq(ids: IdServer): Unit = {
       sender ! GetUuidsResponse(Seq(2, 3, 5, 7, 11, 13, 17, 19))
-      ids
     }
+
+    private[IdServer] override def notTheCoor(hs: HttpServer): Unit =
+      sender ! IAmNotTheCoor(hs)
   }
 
-  def apply(name: String): Behavior[Message] =
-    Behaviors.setup(context => new IdServer(context, name))
+  object MessageJsonProtocol extends DefaultJsonProtocol {
+    implicit val userFormat: RootJsonFormat[User] = jsonFormat5(User)
+    implicit val createFormat: RootJsonFormat[Create] = jsonFormat3(Create)
+    implicit val createResponseFormat: RootJsonFormat[CreateResponse] =
+      jsonFormat2(CreateResponse)
+    implicit val modifyFormat: RootJsonFormat[Modify] = jsonFormat3(Modify)
+    implicit val modifyResponseFormat: RootJsonFormat[ModifyResponse] =
+      jsonFormat1(ModifyResponse)
+    implicit val deleteFormat: RootJsonFormat[Delete] = jsonFormat2(Delete)
+    implicit val deleteResponseFormat: RootJsonFormat[DeleteResponse] =
+      jsonFormat1(DeleteResponse)
+    implicit val loginFormat: RootJsonFormat[LoginLookup] =
+      jsonFormat1(LoginLookup)
+    implicit val loginResponseFormat: RootJsonFormat[LoginLookupResponse] =
+      jsonFormat1(LoginLookupResponse)
+    implicit val uuidFormat: RootJsonFormat[UuidLookup] =
+      jsonFormat1(UuidLookup)
+    implicit val uuidResponseFormat: RootJsonFormat[UuidLookupResponse] =
+      jsonFormat1(UuidLookupResponse)
+    implicit val allResponseFormat: RootJsonFormat[GetAllResponse] =
+      jsonFormat1(GetAllResponse)
+    implicit val usersResponseFormat: RootJsonFormat[GetUsersResponse] =
+      jsonFormat1(GetUsersResponse)
+    implicit val uuidsResponseFormat: RootJsonFormat[GetUuidsResponse] =
+      jsonFormat1(GetUuidsResponse)
+    implicit val httpServerFormat: RootJsonFormat[HttpServer] =
+      jsonFormat2(HttpServer)
+  }
+
+  def apply(name: String, httpPort: Int): Behavior[Message[_]] =
+    Behaviors.setup(new IdServer(_, name, httpPort))
 }
 
-final class IdServer(context: ActorContext[Message], name: String)
-  extends AbstractBehavior[Message](context) {
-  def onMessage(msg: Message): Behavior[Message] = msg.process(this)
+final class IdServer(
+  context: ActorContext[Message[_]],
+  val name: String,
+  val httpPort: Int
+) extends AbstractBehavior[Message[_]](context) {
+
+  private val electTO = 5.second
+  private val ctx = context
+  private implicit val system: ActorSystem[Nothing] = ctx.system
+  private implicit val ec: ExecutionContextExecutor =
+    ctx.system.executionContext
+  private implicit val to: Timeout = 1.second
+
+  val id: Long = rand.nextLong
+
+  ctx.system.receptionist ! Receptionist.Register(allNodes, ctx.self)
+
+  private val webServer =
+    new WebServer("localhost", httpPort, ctx.system, ctx.self, 10)
+
+  def onMessage(msg: Message[_]): Behavior[Message[_]] = {
+    ctx.log.info("Got message: {}", msg)
+    println(msg)
+    msg.process(this)
+    this
+  }
 }
 
