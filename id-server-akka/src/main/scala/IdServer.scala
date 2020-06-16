@@ -52,9 +52,9 @@ object IdServer {
         .map(_.serviceInstances(coorKey).toList)
         .map {
           case Nil =>
-            newCoor(ids).map(_.foreach{ value =>
+            newCoor(ids).map(_.foreach{ actor =>
               println("adding new coor")
-              system.receptionist.ask[Registered](Register(coorKey, value, _))
+              actor.ask[IAmCoored](CoorThyself)
             }).transformWith{ _ =>
               println("starting process again")
               process(ids)
@@ -62,7 +62,7 @@ object IdServer {
           case first :: rest =>
             Future.sequence(rest.map{ actor =>
               println(s"removing $actor from coordinators")
-              system.receptionist.ask[Deregistered](Deregister(coorKey, actor, _))
+              actor.ask[IAmUncoored](UncoorThyself)
             }).transformWith( _ =>
               if (first == context.self) {
                 println("i am the coordinator")
@@ -95,6 +95,26 @@ object IdServer {
     extends Message[GetHttp] {
     private[IdServer] override def validReq(ids: IdServer): Unit = {
       sender ! HttpServer(InetAddress.getLocalHost.getHostAddress, ids.httpPort)
+    }
+  }
+
+  final case class IAmUncoored() extends Message[IAmUncoored]
+  final case class UncoorThyself(sender: ActorRef[IAmUncoored])
+    extends Message[UncoorThyself] {
+    private[IdServer] override def validReq(ids: IdServer): Unit = {
+      import ids._
+      system.receptionist.ask[Deregistered](Deregister(coorKey, ids.ctx.self, _))
+        .transformWith( _ => Future { sender ! IAmUncoored() })
+    }
+  }
+
+  final case class IAmCoored() extends Message[IAmCoored]
+  final case class CoorThyself(sender: ActorRef[IAmCoored])
+    extends Message[CoorThyself] {
+    private[IdServer] override def validReq(ids: IdServer): Unit = {
+      import ids._
+      system.receptionist.ask[Registered](Register(coorKey, ids.ctx.self, _))
+        .transformWith( _ => Future { sender ! IAmCoored() })
     }
   }
 

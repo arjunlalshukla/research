@@ -23,6 +23,7 @@ object RunCluster extends App {
     akka {
       actor {
         provider = cluster
+        allow-java-serialization = on
       }
       remote {
         artery {
