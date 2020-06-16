@@ -32,51 +32,58 @@ case class User(
 
 object IdServer {
 
-  private val allNodes = ServiceKey[Message[_]]("spare-key")
+  private val allNodes = ServiceKey[Message[_]]("all-node-key")
   private val coorKey = ServiceKey[Message[_]]("coor-key")
 
   private val rand = new SecureRandom
   private[this] val saltLen = 16
 
   sealed abstract class Message[+A] {
-    private[IdServer] def process(ids: IdServer): Unit = validReq(ids)
+    private[IdServer] def process(ids: IdServer): Future[Unit] =
+      Future(validReq(ids))(ids.system.executionContext)
     private[IdServer] def validReq(ids: IdServer): Unit = ()
     private[IdServer] def notTheCoor(hs: HttpServer): Unit = ()
   }
 
   sealed abstract class External[+A] extends Message[A] {
-    @scala.annotation.tailrec
-    final private[IdServer] override def process(ids: IdServer): Unit = {
+    final private[IdServer] override def process(ids: IdServer): Future[Unit] = {
       import ids._
-      val coor = Await.result(system.receptionist.ask[Listing](Find(coorKey, _)), electTO)
-      coor.serviceInstances(coorKey).toSeq match {
-        case Seq() =>
-          newCoor(ids).foreach { value =>
-            Await.ready(system.receptionist.ask[Registered](Register(coorKey, value, _)), electTO)
-          }
-          process(ids)
-        case coors =>
-          if (coors.head == context.self) {
-            validReq(ids)
-          } else {
-            notTheCoor(Await.result(coors.head.ask[HttpServer](GetHttp), electTO))
-          }
-          coors.drop(1).map(actor =>
-            system.receptionist.ask[Deregistered](Deregister(coorKey, actor, _))
-          ).foreach(Await.ready(_, electTO))
-      }
+      system.receptionist.ask[Listing](Find(coorKey, _))
+        .map(_.serviceInstances(coorKey).toList)
+        .map {
+          case Nil =>
+            newCoor(ids).map(_.foreach{ value =>
+              println("adding new coor")
+              system.receptionist.ask[Registered](Register(coorKey, value, _))
+            }).transformWith{ _ =>
+              println("starting process again")
+              process(ids)
+            }
+          case first :: rest =>
+            Future.sequence(rest.map{ actor =>
+              println(s"removing $actor from coordinators")
+              system.receptionist.ask[Deregistered](Deregister(coorKey, actor, _))
+            }).transformWith( _ =>
+              if (first == context.self) {
+                println("i am the coordinator")
+                Future { validReq(ids) }
+              } else {
+                println("the coordinator, i am not")
+                first.ask[HttpServer](GetHttp).map(notTheCoor)
+              }
+            )
+        }
     }
 
-    private[this] def newCoor(ids: IdServer): Try[ActorRef[Message[_]]] = Try {
+    private[this] def newCoor(ids: IdServer): Future[Option[ActorRef[Message[_]]]] = {
       import ids._
-      val f = system.receptionist.ask[Listing](Find(allNodes, _)).map {
-        _.serviceInstances(allNodes).maxBy { node =>
-          val hs = Await.result(node.ask[HttpServer](GetHttp), electTO)
-          val x = hs.host.split("\\.").map(_.toLong)
-          (x(0)<<40) | (x(1)<<32) | (x(2)<<24) | (x(3)<<16) | (hs.port & 0xffff)
-        }
-      }
-      Await.result(f, electTO)
+      ids.system.receptionist.ask[Listing](Find(allNodes, _)).map( listing =>
+        Future.sequence(listing.serviceInstances(allNodes).map(node =>
+          node.ask[HttpServer](GetHttp).map((node, _))))
+      ).flatten.map(_.maxByOption { tup =>
+        val x = tup._2.host.split("\\.").map(_.toLong)
+        (x(0)<<40) | (x(1)<<32) | (x(2)<<24) | (x(3)<<16) | (tup._2.port & 0xffff)
+      }).map(_.map(_._1))
     }
   }
 
@@ -112,9 +119,7 @@ object IdServer {
   final case class ModifyInternal(sender: ActorRef[Message[ModifyResponse]], req: Modify)
     extends External[ModifyInternal] {
     private[IdServer] override def validReq(ids: IdServer): Unit = {
-      ids.context.log.info("Modify received, request id is {}", req)
       sender ! ModifyResponse("failure")
-      ids.context.log.info("ModifyResponse sent")
     }
 
     private[IdServer] override def notTheCoor(hs: HttpServer): Unit =
@@ -239,19 +244,21 @@ final class IdServer(
   val httpPort: Int
 ) extends AbstractBehavior[Message[_]](context) {
 
-  private val electTO = 5.second
   private val ctx = context
   private implicit val system: ActorSystem[Nothing] = ctx.system
   private implicit val ec: ExecutionContextExecutor =
     ctx.system.executionContext
-  private implicit val to: Timeout = 1.second
+  // mysterious maximum delay given by Akka
+  private implicit val askTimeout: Timeout = 21474835.second
 
   val id: Long = rand.nextLong
 
-  ctx.system.receptionist ! Receptionist.Register(allNodes, ctx.self)
+  ctx.system.receptionist ! Register(allNodes, ctx.self)
+
+  println("finished startup")
 
   private val webServer =
-    new WebServer("localhost", httpPort, ctx.system, ctx.self, 10)
+    new WebServer("localhost", httpPort, ctx.system, ctx.self, 240)
 
   def onMessage(msg: Message[_]): Behavior[Message[_]] = {
     ctx.log.info("Got message: {}", msg)
