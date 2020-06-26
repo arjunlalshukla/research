@@ -1,28 +1,31 @@
-import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, ActorSystem, Behavior}
+import akka.actor.typed.receptionist.Receptionist.{Deregister, Deregistered, Find, Listing, Register, Registered}
+import akka.actor.typed.receptionist.ServiceKey
+import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors}
+import akka.actor.typed.scaladsl.AskPattern.{Askable, schedulerFromActorSystem}
+import akka.util.Timeout
+import com.google.common.hash.Hashing.sha512
+import java.net.InetAddress
+import java.nio.charset.StandardCharsets.US_ASCII
 import java.security.SecureRandom
 
-import akka.actor.typed.scaladsl.AskPattern._
 import org.apache.commons.lang3.RandomStringUtils.random
-import com.google.common.hash.Hashing.sha512
-import java.nio.charset.StandardCharsets.US_ASCII
-
-import scala.concurrent.duration._
-import spray.json._
-import IdServer._
-import akka.actor.typed.receptionist.ServiceKey
-import akka.actor.typed.receptionist.Receptionist._
-import java.net.InetAddress
-
-import akka.util.Timeout
+import org.bson.codecs.configuration.CodecRegistries.{fromProviders, fromRegistries}
+import org.mongodb.scala.{MongoClient, MongoCollection}
+import org.mongodb.scala.MongoClient.DEFAULT_CODEC_REGISTRY
 import org.mongodb.scala.bson.ObjectId
+import org.mongodb.scala.bson.codecs.Macros.createCodecProvider
 
+import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContextExecutor, Future}
+import spray.json._
+import IdServer.{GetHttp, HttpServer, Message, allNodes}
+
+import scala.util.{Failure, Success}
 
 case class User(
   login: String,
   name: String,
-  uuid: Long,
   pw_hash: String,
   salt: String,
   _id: ObjectId = new ObjectId()
@@ -86,8 +89,6 @@ object IdServer {
     }
   }
 
-  final case class IAmNotTheCoor(hs: HttpServer) extends ExternalResponse[Nothing]
-
   private val allNodes = ServiceKey[Message]("all-node-key")
   private val coorKey = ServiceKey[Message]("coor-key")
 
@@ -128,7 +129,13 @@ object IdServer {
     }
   }
 
-  final case class CreateResponse(uuid: Option[Long], msg: String)
+  final case class IAmNotTheCoor(hs: HttpServer)
+    extends ExternalResponse[Nothing]
+
+  final case class ExternalRequestFailed(e: Throwable)
+    extends ExternalResponse[Nothing]
+
+  final case class CreateResponse(id: Option[ObjectId], msg: String)
     extends ExternalResponse[CreateResponse]
   final case class Create(login: String, name: String, passw: String)
   final case class CreateInternal(
@@ -136,10 +143,10 @@ object IdServer {
     req: Create
   ) extends ExternalRequest[ExternalResponse[CreateResponse]] {
     private[IdServer] def execute(ids: IdServer): Unit = {
-      val u = User(req.login, req.name, 12, "hash", "salt")
+      val u = User(req.login, req.name, "hash", "salt")
       // sha512.hashString(passw, US_ASCII).toString
       // random(saltLen, 0, 0, false, false, null, rand)
-      sender ! CreateResponse(Some(u.uuid), s"Created $u")
+      sender ! CreateResponse(Some(u._id), s"Created $u")
     }
   }
 
@@ -173,7 +180,7 @@ object IdServer {
     req: LoginLookup
   ) extends ExternalRequest[ExternalResponse[LoginLookupResponse]] {
     private[IdServer] def execute(ids: IdServer): Unit = {
-      sender ! LoginLookupResponse(User(req.login, "doe", 0, "foo", "bar"))
+      sender ! LoginLookupResponse(User(req.login, "doe", "foo", "bar"))
     }
   }
 
@@ -185,7 +192,7 @@ object IdServer {
     req: UuidLookup
   ) extends ExternalRequest[ExternalResponse[UuidLookupResponse]] {
     private[IdServer] def execute(ids: IdServer): Unit = {
-      sender ! UuidLookupResponse(User("chocolate", "cake", req.uuid, "is", "good"))
+      sender ! UuidLookupResponse(User("chocolate", "cake", "is", "good"))
     }
   }
 
@@ -194,10 +201,10 @@ object IdServer {
   final case class GetAll(sender: ActorRef[ExternalResponse[GetAllResponse]])
     extends ExternalRequest[ExternalResponse[GetAllResponse]] {
     private[IdServer] def execute(ids: IdServer): Unit = {
-      sender ! GetAllResponse(Seq(
-        User("zelda", "really", 2, "likes", "pringles"),
-        User("snails", "move", 3, "rather", "slowly")
-      ))
+      ids.usersDB.find.toFuture.onComplete {
+        case Success(seq) => sender ! GetAllResponse(seq)
+        case Failure(e) => sender ! ExternalRequestFailed(e)
+      }(ids.ec)
     }
   }
 
@@ -206,16 +213,22 @@ object IdServer {
   final case class GetUsers(sender: ActorRef[ExternalResponse[GetUsersResponse]])
     extends ExternalRequest[ExternalResponse[GetUsersResponse]] {
     private[IdServer] def execute(ids: IdServer): Unit = {
-      sender ! GetUsersResponse(Seq("the", "cloud", "is", "my", "butt"))
+      ids.usersDB.find.toFuture.onComplete {
+        case Success(seq) => sender ! GetUsersResponse(seq.map(_.login))
+        case Failure(e) => sender ! ExternalRequestFailed(e)
+      }(ids.ec)
     }
   }
 
-  final case class GetUuidsResponse(users: Seq[Long])
+  final case class GetUuidsResponse(users: Seq[ObjectId])
     extends ExternalResponse[GetUuidsResponse]
   final case class GetUuids(sender: ActorRef[ExternalResponse[GetUuidsResponse]])
     extends ExternalRequest[ExternalResponse[GetUuidsResponse]] {
     private[IdServer] def execute(ids: IdServer): Unit = {
-      sender ! GetUuidsResponse(Seq(2, 3, 5, 7, 11, 13, 17, 19))
+      ids.usersDB.find.toFuture.onComplete {
+        case Success(seq) => sender ! GetUuidsResponse(seq.map(_._id))
+        case Failure(e) => sender ! ExternalRequestFailed(e)
+      }(ids.ec)
     }
   }
 
@@ -267,7 +280,9 @@ final class IdServer(
   // mysterious maximum delay given by Akka
   private implicit val askTimeout: Timeout = 21474835.second
 
-  val id: Long = rand.nextLong
+  private val usersDB: MongoCollection[User] = MongoClient().getDatabase("id-db").withCodecRegistry(
+    fromRegistries(fromProviders(classOf[User]), DEFAULT_CODEC_REGISTRY )
+  ).getCollection("users")
 
   ctx.system.receptionist ! Register(allNodes, ctx.self)
 
