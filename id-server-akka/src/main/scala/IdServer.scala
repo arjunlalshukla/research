@@ -14,19 +14,31 @@ import org.bson.codecs.configuration.CodecRegistries.{fromProviders, fromRegistr
 import org.mongodb.scala.{MongoClient, MongoCollection}
 import org.mongodb.scala.MongoClient.DEFAULT_CODEC_REGISTRY
 import org.mongodb.scala.bson.ObjectId
+import org.mongodb.scala.bson.annotations.BsonProperty
 import org.mongodb.scala.bson.codecs.Macros.createCodecProvider
+import org.mongodb.scala.model.Filters.equal
 
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContextExecutor, Future}
+import scala.util.{Failure, Success}
 import spray.json._
+
 import IdServer.{GetHttp, HttpServer, Message, allNodes}
 
-import scala.util.{Failure, Success}
-
+object User {
+  val loginField = "login"
+  val nameField = "name"
+  val pw_hashField = "pw_hash"
+  val saltField = "salt"
+}
 case class User(
+  // @BsonProperty(User.loginField)
   login: String,
+  //@BsonProperty(User.nameField)
   name: String,
+  //@BsonProperty(User.pw_hashField)
   pw_hash: String,
+  //@BsonProperty(User.saltField)
   salt: String,
   _id: ObjectId = new ObjectId()
 )
@@ -153,8 +165,10 @@ object IdServer {
   final case class ModifyResponse(msg: String)
     extends ExternalResponse[ModifyResponse]
   final case class Modify(login: String, newName: String, passw: String)
-  final case class ModifyInternal(sender: ActorRef[ExternalResponse[ModifyResponse]], req: Modify)
-    extends ExternalRequest[ExternalResponse[ModifyResponse]] {
+  final case class ModifyInternal(
+    sender: ActorRef[ExternalResponse[ModifyResponse]],
+    req: Modify
+  ) extends ExternalRequest[ExternalResponse[ModifyResponse]] {
     private[IdServer] def execute(ids: IdServer): Unit = {
       sender ! ModifyResponse("failure")
     }
@@ -174,25 +188,47 @@ object IdServer {
 
   final case class LoginLookupResponse(user: User)
     extends ExternalResponse[LoginLookupResponse]
+  final case class NoSuchLogin() extends ExternalResponse[LoginLookupResponse]
   final case class LoginLookup(login: String)
   final case class LoginLookupInternal(
     sender: ActorRef[ExternalResponse[LoginLookupResponse]],
     req: LoginLookup
   ) extends ExternalRequest[ExternalResponse[LoginLookupResponse]] {
     private[IdServer] def execute(ids: IdServer): Unit = {
-      sender ! LoginLookupResponse(User(req.login, "doe", "foo", "bar"))
+      import ids.ec
+      ids.usersDB.find(equal(User.loginField, req.login)).toFuture.map(_.toList)
+        .transform(list => Success(list match {
+          case Success(Nil) => NoSuchLogin()
+          case Success(first :: Nil) => LoginLookupResponse(first)
+          case Success(_) => ExternalRequestFailed(
+            new Exception(s"Login ${req.login} is not unique")
+          )
+          case Failure(e) => ExternalRequestFailed(e)
+        }))
+        .foreach(sender.tell)
     }
   }
 
   final case class UuidLookupResponse(user: User)
     extends ExternalResponse[UuidLookupResponse]
-  final case class UuidLookup(uuid: Long)
+  final case class NoSuchUuid() extends ExternalResponse[UuidLookupResponse]
+  final case class UuidLookup(uuid: ObjectId)
   final case class UuidLookupInternal(
     sender: ActorRef[ExternalResponse[UuidLookupResponse]],
     req: UuidLookup
   ) extends ExternalRequest[ExternalResponse[UuidLookupResponse]] {
     private[IdServer] def execute(ids: IdServer): Unit = {
-      sender ! UuidLookupResponse(User("chocolate", "cake", "is", "good"))
+      import ids.ec
+      ids.usersDB.find(equal("_id", req.uuid)).toFuture.map(_.toList)
+        .transform(list => Success(list match {
+          case Success(Nil) => NoSuchUuid()
+          case Success(first :: Nil) => UuidLookupResponse(first)
+          case Success(_) => ExternalRequestFailed(
+            new Exception(s"Uuid ${req.uuid} is not unique")
+          )
+          case Failure(e) => ExternalRequestFailed(e)
+        }))
+        .foreach(sender.tell)
     }
   }
 
@@ -232,9 +268,20 @@ object IdServer {
     }
   }
 
-  /*
   object MessageJsonProtocol extends DefaultJsonProtocol {
-    //implicit val userFormat: RootJsonFormat[User] = jsonFormat6(User)
+    private[this] val oid_regex = "[0-9a-fA-F]{24}".r
+    implicit object ObjectIdFormat extends RootJsonFormat[ObjectId] {
+      def write(obj: ObjectId): JsValue = JsString(obj.toHexString)
+      def read(json: JsValue): ObjectId = json match {
+        case JsString(s) =>
+          if (oid_regex.matches(s))
+            new ObjectId(s)
+          else
+            deserializationError("ObjectId must be a 24-digit hex string")
+        case _ => deserializationError("expected js string for oid")
+      }
+    }
+    implicit val userFormat: RootJsonFormat[User] = jsonFormat5(User.apply)
     implicit val createFormat: RootJsonFormat[Create] = jsonFormat3(Create)
     implicit val createResponseFormat: RootJsonFormat[CreateResponse] =
       jsonFormat2(CreateResponse)
@@ -261,7 +308,6 @@ object IdServer {
     implicit val httpServerFormat: RootJsonFormat[HttpServer] =
       jsonFormat2(HttpServer)
   }
-  */
 
   def apply(name: String, httpPort: Int): Behavior[Message] =
     Behaviors.setup(new IdServer(_, name, httpPort))
