@@ -18,5 +18,7 @@ libraryDependencies ++= Seq(
   "io.spray" %%  "spray-json" % "1.3.5",
   "org.scalatest" %% "scalatest" % "3.1.1" % Test,
   "org.slf4j" % "slf4j-api" % "1.7.30",
-  "org.slf4j" % "slf4j-log4j12" % "1.7.30"
+  "ch.qos.logback" % "logback-classic" % "1.2.3",
+  "net.logstash.logback" % "logstash-logback-encoder" % "6.4",
+  "org.mongodb.scala" %% "mongo-scala-driver" % "2.9.0"
 )

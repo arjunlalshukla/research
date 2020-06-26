@@ -15,7 +15,7 @@ final class WebServer(
   val interface: String,
   val port: Int,
   system: ActorSystem[Nothing],
-  server: ActorRef[Message[_]],
+  server: ActorRef[Message],
   reqTimeout: Int
 ) {
 
@@ -42,7 +42,7 @@ final class WebServer(
 
   private[this] def getAll(req: HttpRequest) = Future {
     if (req.uri.query().isEmpty)
-      server.ask[Message[GetAllResponse]](GetAll)
+      server.ask[ExternalResponse[GetAllResponse]](GetAll)
         .transform {
           case Success(res) => Success(
             HttpResponse(entity = s"good request: () -> $res")
@@ -57,7 +57,7 @@ final class WebServer(
 
   private[this] def getUsers(req: HttpRequest) = Future {
     if (req.uri.query().isEmpty)
-      server.ask[Message[GetUsersResponse]](GetUsers)
+      server.ask[ExternalResponse[GetUsersResponse]](GetUsers)
         .transform {
           case Success(res) => Success(
             HttpResponse(entity = s"good request: () -> $res")
@@ -72,7 +72,7 @@ final class WebServer(
 
   private[this] def getUuids(req: HttpRequest) = Future {
     if (req.uri.query().isEmpty)
-      server.ask[Message[GetUuidsResponse]](GetUuids)
+      server.ask[ExternalResponse[GetUuidsResponse]](GetUuids)
         .transform {
           case Success(res) => Success(
             HttpResponse(entity = s"good request: () -> $res")
@@ -89,7 +89,7 @@ final class WebServer(
     val query = req.uri.query().toMultiMap
     if (query.keySet == Set("login") && query("login").length == 1) {
       val params = LoginLookup(query("login").head)
-      server.ask[Message[LoginLookupResponse]](LoginLookupInternal(_, params))
+      server.ask[ExternalResponse[LoginLookupResponse]](LoginLookupInternal(_, params))
         .transform {
           case Success(res) => Success(
             HttpResponse(entity = s"good request: $params -> $res")
@@ -107,7 +107,7 @@ final class WebServer(
     if (query.keySet == Set("uuid") && query("uuid").length == 1
       && query("uuid").head.toLongOption.nonEmpty) {
       val params = UuidLookup(query("uuid").head.toInt)
-      server.ask[Message[UuidLookupResponse]](UuidLookupInternal(_, params))
+      server.ask[ExternalResponse[UuidLookupResponse]](UuidLookupInternal(_, params))
         .transform {
           case Success(res) => Success(
             HttpResponse(entity = s"good request: $params -> $res")
