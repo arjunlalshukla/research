@@ -184,7 +184,8 @@ object IdServer {
           case Success(_) =>
             Failure(new Exception(s"login '${req.login}' is not unique"))
           case Failure(e) => Failure(e)
-        }.map(user => {
+        }
+        .map(user => {
           assert(
             user.pw_hash == hash(req.passw, user.salt),
             "password is incorrect"
@@ -193,19 +194,22 @@ object IdServer {
             equal(User.loginField, req.login),
             set(User.nameField, req.newName)
           ).toFuture
-        }).flatten.transform { result => result match {
-        case Success(_) => Success(ModifyResponse())
-        case Failure(e) => Success(ExternalRequestFailed(new Exception("")))
+        }).flatten
+        .transform {
+          case Success(ur) =>
+            if (ur.getModifiedCount == 1)
+              Success(ModifyResponse())
+            else
+              Success(ExternalRequestFailed(new Exception(
+                s"Error: modified ${ur.getModifiedCount} documents"
+              )))
+          case Failure(e) => Success(ExternalRequestFailed(e))
         }
-      }
-
-      {
-        val s: Seq[ExternalResponse[ModifyResponse]] = Seq(ModifyResponse(), ExternalRequestFailed(null))
-      }
+        .foreach(sender.tell)
     }
   }
 
-  final case class DeleteResponse(msg: String)
+  final case class DeleteResponse()
     extends ExternalResponse[DeleteResponse]
   final case class Delete(login: String, passw: String)
   final case class DeleteInternal(
@@ -213,7 +217,33 @@ object IdServer {
     req: Delete
   ) extends ExternalRequest[ExternalResponse[DeleteResponse]] {
     private[IdServer] def execute(ids: IdServer): Unit = {
-      sender ! DeleteResponse("failure")
+      import ids.ec
+      ids.usersDB.find(equal(User.loginField, req.login)).toFuture.map(_.toList)
+        .transform {
+          case Success(Nil) => Failure(new Exception(s"No such login '${req.login}'"))
+          case Success(first :: Nil) => Success(first)
+          case Success(_) =>
+            Failure(new Exception(s"login '${req.login}' is not unique"))
+          case Failure(e) => Failure(e)
+        }
+        .map(user => {
+          assert(
+            user.pw_hash == hash(req.passw, user.salt),
+            "password is incorrect"
+          )
+          ids.usersDB.deleteOne(equal(User.loginField, req.login)).toFuture
+        }).flatten
+        .transform {
+          case Success(dr) =>
+            if (dr.getDeletedCount == 1)
+              Success(DeleteResponse())
+            else
+              Success(ExternalRequestFailed(new Exception(
+                s"Error: deleted ${dr.getDeletedCount} documents"
+              )))
+          case Failure(e) => Success(ExternalRequestFailed(e))
+        }
+        .foreach(sender.tell)
     }
   }
 
@@ -316,9 +346,10 @@ final class IdServer(
   // mysterious maximum delay given by Akka
   private implicit val askTimeout: Timeout = 21474835.second
 
-  private val usersDB: MongoCollection[User] = MongoClient().getDatabase("id-db").withCodecRegistry(
-    fromRegistries(fromProviders(classOf[User]), DEFAULT_CODEC_REGISTRY )
-  ).getCollection("users")
+  private val usersDB: MongoCollection[User] = MongoClient()
+    .getDatabase("id-db").withCodecRegistry(
+      fromRegistries(fromProviders(classOf[User]), DEFAULT_CODEC_REGISTRY )
+    ).getCollection("users")
 
   ctx.system.receptionist ! Register(allNodes, ctx.self)
 

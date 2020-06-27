@@ -13,7 +13,7 @@ import org.mongodb.scala.bson.ObjectId
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.{Failure, Success}
-import IdServer.{Create, CreateInternal, CreateResponse, Delete, DeleteInternal, ExternalRequest, ExternalResponse, GetAll, GetAllResponse, GetUsers, GetUsersResponse, GetUuids, GetUuidsResponse, LoginLookup, LoginLookupInternal, LoginLookupResponse, Message, Modify, ModifyInternal, UuidLookup, UuidLookupInternal, UuidLookupResponse}
+import IdServer.{Create, CreateInternal, Delete, DeleteInternal, ExternalRequest, ExternalResponse, GetAll, GetAllResponse, GetUsers, GetUsersResponse, GetUuids, GetUuidsResponse, LoginLookup, LoginLookupInternal, LoginLookupResponse, Message, Modify, ModifyInternal, UuidLookup, UuidLookupInternal, UuidLookupResponse}
 
 final class WebServer(
   val interface: String,
@@ -139,7 +139,8 @@ final class WebServer(
         case Strict(`application/x-www-form-urlencoded`, data) =>
           Some(Query(data.utf8String).toMultiMap)
         case _ => None
-      }).filter(validate) match {
+      })
+      .filter(validate) match {
         case None => Future(HttpResponse(entity = "bad request"))
         case Some(query) =>
           val params = getParams(query)
