@@ -17,6 +17,7 @@ import org.mongodb.scala.bson.ObjectId
 import org.mongodb.scala.bson.annotations.BsonProperty
 import org.mongodb.scala.bson.codecs.Macros.createCodecProvider
 import org.mongodb.scala.model.Filters.equal
+import org.mongodb.scala.model.Updates.set
 
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContextExecutor, Future}
@@ -107,6 +108,9 @@ object IdServer {
   private val rand = new SecureRandom
   private[this] val saltLen = 16
 
+  private[this] def hash(pass: String, salt: String): String =
+    sha512.hashString(pass + salt, US_ASCII).toString
+
   final case class HttpServer(host: String, port: Int)
     extends InternalResponse[HttpServer] {
     lazy val sortKey: Long = {
@@ -147,7 +151,7 @@ object IdServer {
   final case class ExternalRequestFailed(e: Throwable)
     extends ExternalResponse[Nothing]
 
-  final case class CreateResponse(id: Option[ObjectId], msg: String)
+  final case class CreateResponse(id: ObjectId)
     extends ExternalResponse[CreateResponse]
   final case class Create(login: String, name: String, passw: String)
   final case class CreateInternal(
@@ -155,14 +159,16 @@ object IdServer {
     req: Create
   ) extends ExternalRequest[ExternalResponse[CreateResponse]] {
     private[IdServer] def execute(ids: IdServer): Unit = {
-      val u = User(req.login, req.name, "hash", "salt")
-      // sha512.hashString(passw, US_ASCII).toString
-      // random(saltLen, 0, 0, false, false, null, rand)
-      sender ! CreateResponse(Some(u._id), s"Created $u")
+      val salt = random(saltLen, 0, 0, false, false, null, rand)
+      val newUser = User(req.login, req.name, hash(req.passw, salt), salt)
+      ids.usersDB.insertOne(newUser).toFuture.onComplete {
+        case Success(_) => sender ! CreateResponse(newUser._id)
+        case Failure(e) => sender ! ExternalRequestFailed(e)
+      }(ids.ec)
     }
   }
 
-  final case class ModifyResponse(msg: String)
+  final case class ModifyResponse()
     extends ExternalResponse[ModifyResponse]
   final case class Modify(login: String, newName: String, passw: String)
   final case class ModifyInternal(
@@ -170,13 +176,38 @@ object IdServer {
     req: Modify
   ) extends ExternalRequest[ExternalResponse[ModifyResponse]] {
     private[IdServer] def execute(ids: IdServer): Unit = {
-      sender ! ModifyResponse("failure")
+      import ids.ec
+      ids.usersDB.find(equal(User.loginField, req.login)).toFuture.map(_.toList)
+        .transform {
+          case Success(Nil) => Failure(new Exception(s"No such login '${req.login}'"))
+          case Success(first :: Nil) => Success(first)
+          case Success(_) =>
+            Failure(new Exception(s"login '${req.login}' is not unique"))
+          case Failure(e) => Failure(e)
+        }.map(user => {
+          assert(
+            user.pw_hash == hash(req.passw, user.salt),
+            "password is incorrect"
+          )
+          ids.usersDB.updateOne(
+            equal(User.loginField, req.login),
+            set(User.nameField, req.newName)
+          ).toFuture
+        }).flatten.transform { result => result match {
+        case Success(_) => Success(ModifyResponse())
+        case Failure(e) => Success(ExternalRequestFailed(new Exception("")))
+        }
+      }
+
+      {
+        val s: Seq[ExternalResponse[ModifyResponse]] = Seq(ModifyResponse(), ExternalRequestFailed(null))
+      }
     }
   }
 
   final case class DeleteResponse(msg: String)
     extends ExternalResponse[DeleteResponse]
-  case class Delete(login: String, passw: String)
+  final case class Delete(login: String, passw: String)
   final case class DeleteInternal(
     sender: ActorRef[ExternalResponse[DeleteResponse]],
     req: Delete
@@ -266,47 +297,6 @@ object IdServer {
         case Failure(e) => sender ! ExternalRequestFailed(e)
       }(ids.ec)
     }
-  }
-
-  object MessageJsonProtocol extends DefaultJsonProtocol {
-    private[this] val oid_regex = "[0-9a-fA-F]{24}".r
-    implicit object ObjectIdFormat extends RootJsonFormat[ObjectId] {
-      def write(obj: ObjectId): JsValue = JsString(obj.toHexString)
-      def read(json: JsValue): ObjectId = json match {
-        case JsString(s) =>
-          if (oid_regex.matches(s))
-            new ObjectId(s)
-          else
-            deserializationError("ObjectId must be a 24-digit hex string")
-        case _ => deserializationError("expected js string for oid")
-      }
-    }
-    implicit val userFormat: RootJsonFormat[User] = jsonFormat5(User.apply)
-    implicit val createFormat: RootJsonFormat[Create] = jsonFormat3(Create)
-    implicit val createResponseFormat: RootJsonFormat[CreateResponse] =
-      jsonFormat2(CreateResponse)
-    implicit val modifyFormat: RootJsonFormat[Modify] = jsonFormat3(Modify)
-    implicit val modifyResponseFormat: RootJsonFormat[ModifyResponse] =
-      jsonFormat1(ModifyResponse)
-    implicit val deleteFormat: RootJsonFormat[Delete] = jsonFormat2(Delete)
-    implicit val deleteResponseFormat: RootJsonFormat[DeleteResponse] =
-      jsonFormat1(DeleteResponse)
-    implicit val loginFormat: RootJsonFormat[LoginLookup] =
-      jsonFormat1(LoginLookup)
-    implicit val loginResponseFormat: RootJsonFormat[LoginLookupResponse] =
-      jsonFormat1(LoginLookupResponse)
-    implicit val uuidFormat: RootJsonFormat[UuidLookup] =
-      jsonFormat1(UuidLookup)
-    implicit val uuidResponseFormat: RootJsonFormat[UuidLookupResponse] =
-      jsonFormat1(UuidLookupResponse)
-    implicit val allResponseFormat: RootJsonFormat[GetAllResponse] =
-      jsonFormat1(GetAllResponse)
-    implicit val usersResponseFormat: RootJsonFormat[GetUsersResponse] =
-      jsonFormat1(GetUsersResponse)
-    implicit val uuidsResponseFormat: RootJsonFormat[GetUuidsResponse] =
-      jsonFormat1(GetUuidsResponse)
-    implicit val httpServerFormat: RootJsonFormat[HttpServer] =
-      jsonFormat2(HttpServer)
   }
 
   def apply(name: String, httpPort: Int): Behavior[Message] =

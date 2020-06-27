@@ -128,42 +128,6 @@ final class WebServer(
       Future(HttpResponse(entity = "bad request"))
   }.flatten
 
-  private[this] def create(req: HttpRequest) = Future {
-    (req.entity match {
-      case Strict(`application/x-www-form-urlencoded`, data) =>
-        Some(Query(data.utf8String).toMultiMap)
-      case _ => None
-    }).filter(query => query.keySet == Set("login", "name", "passw") &&
-      query.forall(_._2.length == 1)
-    ) match {
-      case None => Future(HttpResponse(entity = "bad request"))
-      case Some(query) =>
-        val params = Create(
-          query("login").head, query("name").head, query("passw").head)
-        server.ask[ExternalResponse[CreateResponse]](CreateInternal(_, params))
-          .transform {
-            case Success(res) => Success(
-              HttpResponse(entity = s"good request: $params -> $res")
-            )
-            case Failure(e) => Success(
-              HttpResponse(entity = s"server error: ${e.getMessage}")
-            )
-          }
-    }
-  }.flatten
-
-  private[this] def delete(req: HttpRequest) = postProcess(req,
-    q => q.keySet == Set("login", "passw") && q.forall(_._2.length == 1),
-    q => Delete(q("login").head, q("passw").head),
-    DeleteInternal.apply
-  )
-
-  private[this] def modify(req: HttpRequest) = postProcess(req,
-    q => q.keySet == Set("login", "name", "passw") && q.forall(_._2.length == 1),
-    q => Modify(q("login").head, q("name").head, q("passw").head),
-    ModifyInternal.apply
-  )
-
   private[this] def postProcess[A, B <: ExternalRequest[_], C](
     req: HttpRequest,
     validate: Map[String, List[String]] => Boolean,
@@ -191,4 +155,22 @@ final class WebServer(
       }
     }.flatten
   }
+
+  private[this] def create(req: HttpRequest) = postProcess(req,
+    q => q.keySet == Set("login", "name", "passw") && q.forall(_._2.length == 1),
+    q => Create(q("login").head, q("name").head, q("passw").head),
+    CreateInternal.apply
+  )
+
+  private[this] def delete(req: HttpRequest) = postProcess(req,
+    q => q.keySet == Set("login", "passw") && q.forall(_._2.length == 1),
+    q => Delete(q("login").head, q("passw").head),
+    DeleteInternal.apply
+  )
+
+  private[this] def modify(req: HttpRequest) = postProcess(req,
+    q => q.keySet == Set("login", "name", "passw") && q.forall(_._2.length == 1),
+    q => Modify(q("login").head, q("name").head, q("passw").head),
+    ModifyInternal.apply
+  )
 }
