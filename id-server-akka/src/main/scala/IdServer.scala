@@ -186,10 +186,8 @@ object IdServer {
           case Failure(e) => Failure(e)
         }
         .map(user => {
-          assert(
-            user.pw_hash == hash(req.passw, user.salt),
-            "password is incorrect"
-          )
+          if (user.pw_hash != hash(req.passw, user.salt))
+            throw new Exception("password is incorrect")
           ids.usersDB.updateOne(
             equal(User.loginField, req.login),
             set(User.nameField, req.newName)
@@ -227,10 +225,8 @@ object IdServer {
           case Failure(e) => Failure(e)
         }
         .map(user => {
-          assert(
-            user.pw_hash == hash(req.passw, user.salt),
-            "password is incorrect"
-          )
+          if (user.pw_hash != hash(req.passw, user.salt))
+            throw new Exception("password is incorrect")
           ids.usersDB.deleteOne(equal(User.loginField, req.login)).toFuture
         }).flatten
         .transform {

@@ -48,56 +48,16 @@ final class WebServer(
       case _ => Future(HttpResponse(entity = "Page/method combo is invalid"))
     }
 
-  private[this] def getAll(req: HttpRequest) = Future {
-    if (req.uri.query().isEmpty)
-      server.ask[ExternalResponse[GetAllResponse]](GetAll)
-        .transform {
-          case Success(res) => Success(
-            HttpResponse(entity = s"good request: () -> $res")
-          )
-          case Failure(e) => Success(
-            HttpResponse(entity = s"server error: ${e.getMessage}")
-          )
-        }
-    else
-      Future(HttpResponse(entity = "bad request"))
-  }.flatten
-
-  private[this] def getUsers(req: HttpRequest) = Future {
-    if (req.uri.query().isEmpty)
-      server.ask[ExternalResponse[GetUsersResponse]](GetUsers)
-        .transform {
-          case Success(res) => Success(
-            HttpResponse(entity = s"good request: () -> $res")
-          )
-          case Failure(e) => Success(
-            HttpResponse(entity = s"server error: ${e.getMessage}")
-          )
-        }
-    else
-      Future(HttpResponse(entity = "bad request"))
-  }.flatten
-
-  private[this] def getUuids(req: HttpRequest) = Future {
-    if (req.uri.query().isEmpty)
-      server.ask[ExternalResponse[GetUuidsResponse]](GetUuids)
-        .transform {
-          case Success(res) => Success(
-            HttpResponse(entity = s"good request: () -> $res")
-          )
-          case Failure(e) => Success(
-            HttpResponse(entity = s"server error: ${e.getMessage}")
-          )
-        }
-    else
-      Future(HttpResponse(entity = "bad request"))
-  }.flatten
-
-  private[this] def loginLookup(req: HttpRequest) = Future {
+  private[this] def getProcess[A, B <: ExternalRequest[_], C](
+    req: HttpRequest,
+    validate: Map[String, List[String]] => Boolean,
+    getParams: Map[String, List[String]] => C,
+    getRequest: (ActorRef[ExternalResponse[A]], C) => B
+  ) = Future {
     val query = req.uri.query().toMultiMap
-    if (query.keySet == Set("login") && query("login").length == 1) {
-      val params = LoginLookup(query("login").head)
-      server.ask[ExternalResponse[LoginLookupResponse]](LoginLookupInternal(_, params))
+    if (validate(query)) {
+      val params = getParams(query)
+      server.ask[ExternalResponse[A]](getRequest(_, params))
         .transform {
           case Success(res) => Success(
             HttpResponse(entity = s"good request: $params -> $res")
@@ -110,23 +70,39 @@ final class WebServer(
       Future(HttpResponse(entity = "bad request"))
   }.flatten
 
-  private[this] def uuidLookup(req: HttpRequest) = Future {
-    val query = req.uri.query().toMultiMap
-    if (query.keySet == Set("uuid") && query("uuid").length == 1
-      && oid_regex.matches(query("uuid").head)) {
-      val params = UuidLookup(new ObjectId(query("uuid").head))
-      server.ask[ExternalResponse[UuidLookupResponse]](UuidLookupInternal(_, params))
-        .transform {
-          case Success(res) => Success(
-            HttpResponse(entity = s"good request: $params -> $res")
-          )
-          case Failure(e) => Success(
-            HttpResponse(entity = s"server error: ${e.getMessage}")
-          )
-        }
-    } else
-      Future(HttpResponse(entity = "bad request"))
-  }.flatten
+  private[this] def getAll(req: HttpRequest) = getProcess(req,
+    _.isEmpty,
+    _ => None,
+    (a: ActorRef[ExternalResponse[GetAllResponse]], _: Option[Nothing]) =>
+      GetAll(a)
+  )
+
+  private[this] def getUsers(req: HttpRequest) = getProcess(req,
+    _.isEmpty,
+    _ => None,
+    (a: ActorRef[ExternalResponse[GetUsersResponse]], _: Option[Nothing]) =>
+      GetUsers(a)
+  )
+
+  private[this] def getUuids(req: HttpRequest) = getProcess(req,
+    _.isEmpty,
+    _ => None,
+    (a: ActorRef[ExternalResponse[GetUuidsResponse]], _: Option[Nothing]) =>
+      GetUuids(a)
+  )
+
+  private[this] def loginLookup(req: HttpRequest) = getProcess(req,
+    q => q.keySet == Set("login") && q("login").length == 1,
+    q => LoginLookup(q("login").head),
+    LoginLookupInternal.apply
+  )
+
+  private[this] def uuidLookup(req: HttpRequest) = getProcess(req,
+    q => q.keySet == Set("uuid") && q("uuid").length == 1 &&
+      oid_regex.matches(q("uuid").head),
+    q => UuidLookup(new ObjectId(q("uuid").head)),
+    UuidLookupInternal.apply
+  )
 
   private[this] def postProcess[A, B <: ExternalRequest[_], C](
     req: HttpRequest,
