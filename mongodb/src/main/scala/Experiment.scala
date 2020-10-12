@@ -27,15 +27,8 @@ object Experiment extends App {
   val database: MongoDatabase = mongoClient.getDatabase("id-db").withCodecRegistry(codecRegistry)
   val collection: MongoCollection[User] = database.getCollection("users")
 
-  val ti = User("login", "arjun", "fewatfvea", "himalayan")
-
-  println(ti._id.toString.length)
-
-  //collection.insertOne(ti).printResults()
-
-  collection.find().printResults()
-
-  new ObjectId("AAAAAAAAAAAAAAAAAAAAAAAA")
+  val to = User("foolish", "hi", "there", "fella")
+  collection.insertOne(to).printResults()
 }
 
 object Helpers {

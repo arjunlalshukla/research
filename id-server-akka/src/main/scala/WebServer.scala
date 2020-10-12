@@ -33,7 +33,8 @@ final class WebServer(
     .to(Sink.foreach { connection =>
       println("Accepted new connection from " + connection.remoteAddress)
       connection.handleWithAsyncHandler(requestHandler)
-    }).run()
+    })
+    .run()
 
   private[this] def requestHandler(req: HttpRequest): Future[HttpResponse] =
     (req.method, req.uri.path.toString) match {
