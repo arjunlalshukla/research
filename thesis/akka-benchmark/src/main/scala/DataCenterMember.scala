@@ -14,7 +14,7 @@ final class DataCenterMember extends Actor {
   var devices = Map.empty[ActorSelection, HeartbeatInterval]
 
   var heartbeatReqSenders = Map.empty[ActorSelection, ActorRef]
-  val capacity = 100
+  val capacity = 30
 
   replicator ! Subscribe(devicesKey, self)
 
@@ -36,7 +36,7 @@ final class DataCenterMember extends Actor {
         }
       } else {
         arjun(s"Rejected join request")
-        sender() ! JoinRejected()
+        from ! JoinRejected()
       }
     }
     case c: Replicator.Changed[ORMap[ActorSelection, HeartbeatInterval]] => {

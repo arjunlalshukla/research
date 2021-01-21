@@ -10,9 +10,9 @@ final class IntervalStorage(var capacity: Int, initial_fill: Long)(implicit logC
     throw new IllegalArgumentException
   }
 
-  private[this] val intervals = mutable.ArrayDeque(initial_fill)
-  private[this] var sumSquares = initial_fill*initial_fill
-  private[this] var sum = initial_fill
+  private[this] val intervals = mutable.ArrayDeque(initial_fill*2, 0L)
+  private[this] var sumSquares = intervals.map(x => x*x).sum
+  private[this] var sum = intervals.sum
   private[this] var _latest = LocalDateTime.now()
 
   def latest: LocalDateTime = _latest
@@ -35,12 +35,15 @@ final class IntervalStorage(var capacity: Int, initial_fill: Long)(implicit logC
     sum += intervals.head
     sumSquares += intervals.head * intervals.head
     _latest = newLatest
-    arjun(s"Storage [${intervals.mkString(",")}]")
   }
 
   def mean: Double = sum.toDouble/intervals.length
 
   def stdev: Double = sqrt(sumSquares/intervals.length - mean*mean)
+
+  def summary: String =
+    s"phi = $phi; since latest = ${millis_since_latest()}; mean = $mean; " +
+      s"stdev = $stdev; entries = [${intervals.mkString(",")}]"
 
   // Copied directly from Akka PhiAccrualFailureDetector.scala
   def phi: Double = {

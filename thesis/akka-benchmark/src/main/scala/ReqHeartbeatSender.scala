@@ -3,7 +3,7 @@ import akka.cluster.ddata.Replicator.{Subscribe, Update, WriteLocal}
 import akka.cluster.ddata.{DistributedData, ORMap, ORMapKey, Replicator, SelfUniqueAddress}
 
 import scala.concurrent.duration._
-import Utils.arjun
+import Utils.{arjun, unreliableRef, unreliableSelection}
 
 final class ReqHeartbeatSender(
   var interval: Int,
@@ -31,9 +31,9 @@ final class ReqHeartbeatSender(
   def receive: Receive = {
     case Tick => {
       arjun(s"Sending ReqHeartbeat to $destination")
-      arjun(s"phi is now ${storage.phi}")
+      arjun(storage.summary)
       if (storage.phi < phi_threshold) {
-        destination ! ReqHeartbeat(self)
+        unreliableSelection(destination, ReqHeartbeat(self))
         context.system.scheduler.scheduleOnce(interval.millis, self, Tick)
       } else {
         supervisor ! RemoveDevice(destination)
@@ -45,8 +45,7 @@ final class ReqHeartbeatSender(
     }
     case Heartbeat(from) => {
       arjun(s"Received Heartbeat from ${from.path}")
-      val as = selection(from)
-      if (as == destination) {
+      if (selection(from) == destination) {
         storage.push()
       } else {
         arjun(s"Does not match $destination")
