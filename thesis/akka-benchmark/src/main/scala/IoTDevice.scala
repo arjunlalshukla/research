@@ -8,7 +8,7 @@ final class IoTDevice(
   val id: Node,
   var interval: Int
 ) extends Actor {
-  implicit val logContext = "IoTDevice"
+  implicit val logContext = ArjunContext("IoTDevice")
   arjun(s"My path is ${context.self.path.toString}")
   import context.dispatcher
   val intervalStorageCapacity = 10
@@ -24,6 +24,8 @@ final class IoTDevice(
 
   self ! NewInterval(interval)
   self ! Tick
+
+  context.system.scheduler.scheduleOnce(60000.millis, self, NewInterval(interval*4))
 
   def receive: Receive = {
     case ReqHeartbeat(replyTo) => {
@@ -42,25 +44,28 @@ final class IoTDevice(
       val tooSlow = heartbeatReqs.full && heartbeatReqs.mean*slowNetTolernce > interval
       if (tooFast) {
         arjun(s"Heartbeats are too fast! Slow down! mean = ${heartbeatReqs.mean}")
-        changeInterval(selection(replyTo))
+        self ! NewInterval(interval)
       } else if (tooSlow) {
         arjun(s"Heartbeats are too slow! Speed up! mean = ${heartbeatReqs.mean}")
-        changeInterval(selection(replyTo))
+        self ! NewInterval(interval)
       }
       heartbeatReqs.push()
     }
     case NewInterval(millis) => {
       arjun(s"Sending new interval $millis")
+      if (interval != millis) {
+        newStorage()
+      }
+      interval = millis
+      clock += 1
       server match {
         case None => {
           arjun(s"No server, contacting seeds $seeds")
-          clock += 1
           seeds.map(fromNode)
             .foreach(_ ! SetHeartbeatInterval(self_as, HeartbeatInterval(clock, interval)))
         }
-        case Some(ref) => {
-          interval = millis
-          changeInterval(fromNode(ref))
+        case Some(node) => {
+          fromNode(node) ! SetHeartbeatInterval(self_as, HeartbeatInterval(clock, interval))
         }
       }
     }
@@ -80,12 +85,6 @@ final class IoTDevice(
         .getOrElse(id)
     }
     case a => arjun(s"Unhandled message $a")
-  }
-
-  def changeInterval(ref: ActorSelection): Unit = {
-    clock += 1
-    ref ! HeartbeatInterval(clock, interval)
-    newStorage()
   }
 
   def newStorage(): IntervalStorage = {

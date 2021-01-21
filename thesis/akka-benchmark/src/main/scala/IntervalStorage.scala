@@ -5,7 +5,7 @@ import java.time.temporal.ChronoUnit
 import scala.collection.mutable
 import scala.math.sqrt
 
-final class IntervalStorage(var capacity: Int, initial_fill: Long)(implicit logContext: String) {
+final class IntervalStorage(var capacity: Int, initial_fill: Long)(implicit logContext: ArjunContext) {
   if (capacity < 1) {
     throw new IllegalArgumentException
   }

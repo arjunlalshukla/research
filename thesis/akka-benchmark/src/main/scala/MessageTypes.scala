@@ -2,6 +2,7 @@ import akka.actor.{ActorRef, ActorSelection}
 import akka.cluster.ddata.ReplicatedData
 
 case class Node(host: String, port: Int)
+case class ArjunContext(s: String)
 case object Tick
 
 // Message Types: Devices

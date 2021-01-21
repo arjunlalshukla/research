@@ -12,7 +12,10 @@ final class ReqHeartbeatSender(
   val capacity: Int
 ) extends Actor {
   import context.dispatcher
-  implicit val logContext = s"HeartbeatReqSender ${destination.anchorPath}"
+  implicit val logContext = destination.anchorPath.address.host
+    .zip(destination.anchorPath.address.port)
+    .map(tup => ArjunContext(s"HeartbeatReqSender ${tup._1}:${tup._2}"))
+    .getOrElse(ArjunContext(s"HeartbeatReqSender ${destination.anchorPath}"))
   arjun(s"My path is ${context.self.path.toString}")
   val replicator = DistributedData(context.system).replicator
   implicit val node: SelfUniqueAddress =
@@ -51,7 +54,12 @@ final class ReqHeartbeatSender(
     }
     case c: Replicator.Changed[ORMap[ActorSelection, HeartbeatInterval]] => {
       c.dataValue.get(destination) match {
-        case Some(HeartbeatInterval(_, millis)) => interval = millis
+        case Some(HeartbeatInterval(_, millis)) =>
+          arjun(s"interval updated to $millis milliseconds")
+          if (millis != interval) {
+            storage = new IntervalStorage(capacity, millis)
+          }
+          interval = millis
         case None =>
           self ! PoisonPill
       }

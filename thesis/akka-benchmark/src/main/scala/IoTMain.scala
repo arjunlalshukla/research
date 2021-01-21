@@ -3,7 +3,7 @@ import akka.actor.{ActorSystem, Props}
 import com.typesafe.config.ConfigFactory
 
 object IoTMain extends App {
-  implicit  val loginContext = "DataCenterMain"
+  implicit  val loginContext = ArjunContext("DataCenterMain")
   val requiredArgs = 1
   if (args.length % 2 != requiredArgs % 2 || args.length < requiredArgs) {
     arjun(args.map('"'+_+'"').mkString(","))
@@ -21,6 +21,7 @@ object IoTMain extends App {
       actor {
         provider = cluster
         allow-java-serialization = on
+        warn-about-java-serializer-usage = off
       }
       remote {
         artery {

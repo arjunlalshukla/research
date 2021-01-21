@@ -10,8 +10,8 @@ object Utils {
 
   def rand_range(min: Int, max: Int): Int = rand.nextInt(max - min) + min
 
-  def arjun(s: Any)(implicit context: String): Unit =
-    println(s"[     arjun     ][$context] ${s.toString}")
+  def arjun(s: Any)(implicit context: ArjunContext): Unit =
+    println(s"[     arjun     ][${context.s}] ${s.toString}")
 
   def selection(ref: ActorRef)(implicit context: ActorContext): ActorSelection = {
     context.actorSelection(ref.path)
@@ -27,7 +27,7 @@ object Utils {
     max_delay: Int = Utils.max_delay,
     min_delay: Int = Utils.min_delay,
     fail_prob: Double = fail_prob
-  )(implicit context: ActorContext, logContext: String): Unit = {
+  )(implicit context: ActorContext, logContext: ArjunContext): Unit = {
     if (rand.nextDouble > fail_prob) {
       import context.dispatcher
       val delay = rand_range(min_delay, max_delay).millis
@@ -44,7 +44,7 @@ object Utils {
     max_delay: Int = Utils.max_delay,
     min_delay: Int = Utils.min_delay,
     fail_prob: Double = fail_prob
-  )(implicit context: ActorContext, logContext: String): Unit = {
+  )(implicit context: ActorContext, logContext: ArjunContext): Unit = {
     if (rand.nextDouble > fail_prob) {
       import context.dispatcher
       val delay = rand_range(min_delay, max_delay).millis

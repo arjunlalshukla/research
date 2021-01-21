@@ -4,7 +4,7 @@ import akka.cluster.ddata.Replicator.{Changed, Delete, Subscribe, Update, WriteL
 import Utils.arjun
 
 final class DataCenterMember extends Actor {
-  implicit val logContext = "DataCenterMember"
+  implicit val logContext = ArjunContext("DataCenterMember")
   arjun(s"My path is ${context.self.path.toString}")
   val replicator = DistributedData(context.system).replicator
   implicit val node: SelfUniqueAddress =
@@ -20,7 +20,7 @@ final class DataCenterMember extends Actor {
 
   def receive: Receive = {
     case SetHeartbeatInterval(from, hi) => {
-      arjun(s"Received HeartbeatInterval $hi from ${from.anchorPath}")
+      arjun(s"Received SetHeartbeatInterval $hi from $from")
       if (canJoin(sender())) {
         arjun(s"Updating heartbeat interval for $from")
         replicator ! Update(
