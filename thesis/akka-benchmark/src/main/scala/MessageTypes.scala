@@ -12,6 +12,7 @@ case class AddSeed(seed: ActorSelection)
 
 //Message Types: Data Center
 case class Heartbeat(from: ActorRef)
+case class SetHeartbeatInterval(from: ActorSelection, hi: HeartbeatInterval)
 case class HeartbeatInterval(clock: Long, interval_millis: Int)
   extends ReplicatedData {
   type T = HeartbeatInterval
@@ -21,7 +22,8 @@ case class HeartbeatInterval(clock: Long, interval_millis: Int)
     else HeartbeatInterval(clock, interval_millis max that.interval_millis)
   }
 }
-case class RemoveDevice(as: ActorSelection)
+case class RemoveHeartbeatReqSender(device: ActorSelection, toTerminate: ActorRef)
+case class RemoveDevice(device: ActorSelection)
 
 class LocalDeviceRecord(
   val heartbeatReqSender: ActorRef,

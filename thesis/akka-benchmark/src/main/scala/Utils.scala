@@ -4,16 +4,21 @@ import scala.concurrent.duration._
 object Utils {
   val clusterName = "AkkaBenchCluster"
   val rand = scala.util.Random
-  val min_delay = 1000
-  val max_delay = 5000
+  val min_delay = 500
+  val max_delay = 3000
   val fail_prob = 0.5
 
   def rand_range(min: Int, max: Int): Int = rand.nextInt(max - min) + min
 
-  def arjun(s: Any): Unit = println(s"[     arjun     ] ${s.toString}")
+  def arjun(s: Any)(implicit context: String): Unit =
+    println(s"[     arjun     ][$context] ${s.toString}")
 
   def selection(ref: ActorRef)(implicit context: ActorContext): ActorSelection = {
     context.actorSelection(ref.path)
+  }
+
+  def addressString(node: Node, localPath: String): String = {
+    s"akka://$clusterName@${node.host}:${node.port}$localPath"
   }
 
   def unreliableRef(
@@ -22,7 +27,7 @@ object Utils {
     max_delay: Int = Utils.max_delay,
     min_delay: Int = Utils.min_delay,
     fail_prob: Double = fail_prob
-  )(implicit context: ActorContext): Unit = {
+  )(implicit context: ActorContext, logContext: String): Unit = {
     if (rand.nextDouble > fail_prob) {
       import context.dispatcher
       val delay = rand_range(min_delay, max_delay).millis
@@ -39,7 +44,7 @@ object Utils {
     max_delay: Int = Utils.max_delay,
     min_delay: Int = Utils.min_delay,
     fail_prob: Double = fail_prob
-  )(implicit context: ActorContext): Unit = {
+  )(implicit context: ActorContext, logContext: String): Unit = {
     if (rand.nextDouble > fail_prob) {
       import context.dispatcher
       val delay = rand_range(min_delay, max_delay).millis

@@ -5,7 +5,7 @@ import java.time.temporal.ChronoUnit
 import scala.collection.mutable
 import scala.math.sqrt
 
-final class IntervalStorage(var capacity: Int, initial_fill: Long) {
+final class IntervalStorage(var capacity: Int, initial_fill: Long)(implicit logContext: String) {
   if (capacity < 1) {
     throw new IllegalArgumentException
   }
@@ -44,7 +44,7 @@ final class IntervalStorage(var capacity: Int, initial_fill: Long) {
 
   // Copied directly from Akka PhiAccrualFailureDetector.scala
   def phi: Double = {
-    val diff = ChronoUnit.MILLIS.between(LocalDateTime.now(), latest)
+    val diff = ChronoUnit.MILLIS.between(latest, LocalDateTime.now())
     val y = (diff - mean) / stdev
     val e = math.exp(-y * (1.5976 + 0.070566 * y * y))
     if (diff > mean)

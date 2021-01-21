@@ -3,6 +3,7 @@ import akka.actor.{ActorSystem, Props}
 import com.typesafe.config.ConfigFactory
 
 object DataCenterMain extends App {
+  implicit  val loginContext = "DataCenterMain"
   val requiredArgs = 1
   if (args.length % 2 != requiredArgs % 2 || args.length < requiredArgs) {
     arjun(args.map('"'+_+'"').mkString(","))

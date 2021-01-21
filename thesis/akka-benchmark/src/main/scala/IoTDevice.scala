@@ -1,13 +1,14 @@
-import Utils.arjun
+import Utils.{addressString, arjun, unreliableRef}
 import akka.actor.{Actor, ActorRef, ActorSelection}
 
 import scala.concurrent.duration._
 
 final class IoTDevice(
-  var seeds: Set[ActorSelection],
+  var seeds: Set[Node],
   val id: Node,
   var interval: Int
 ) extends Actor {
+  implicit val logContext = "IoTDevice"
   arjun(s"My path is ${context.self.path.toString}")
   import context.dispatcher
   val intervalStorageCapacity = 10
@@ -16,30 +17,35 @@ final class IoTDevice(
   val tickInterval = 8000
 
   var clock = 0L
-  var server: Option[ActorSelection] = None
+  var server: Option[Node] = None
   var heartbeatReqs = newStorage()
+
+  val self_as = context.actorSelection(self.path)
 
   self ! NewInterval(interval)
   self ! Tick
 
   def receive: Receive = {
     case ReqHeartbeat(replyTo) => {
-      val as = selection(replyTo)
-      if (!server.contains(as)) {
+      val node = replyTo.path.address.host
+        .zip(replyTo.path.address.port)
+        .map(tup => Node(tup._1, tup._2))
+        .getOrElse(id)
+      if (!server.contains(node)) {
         newStorage()
-        server = Option(as)
-        seeds += as
+        server = Option(node)
+        seeds += node
       }
       arjun(s"Received ReqHeartbeat from $replyTo")
-      replyTo ! Heartbeat(self)
+      unreliableRef(replyTo, Heartbeat(self), fail_prob = -1.0)
       val tooFast = heartbeatReqs.full && heartbeatReqs.mean < interval
       val tooSlow = heartbeatReqs.full && heartbeatReqs.mean*slowNetTolernce > interval
       if (tooFast) {
         arjun(s"Heartbeats are too fast! Slow down! mean = ${heartbeatReqs.mean}")
-        server.foreach(changeInterval)
+        changeInterval(selection(replyTo))
       } else if (tooSlow) {
         arjun(s"Heartbeats are too slow! Speed up! mean = ${heartbeatReqs.mean}")
-        server.foreach(changeInterval)
+        changeInterval(selection(replyTo))
       }
       heartbeatReqs.push()
     }
@@ -49,11 +55,12 @@ final class IoTDevice(
         case None => {
           arjun(s"No server, contacting seeds $seeds")
           clock += 1
-          seeds.foreach(_ ! HeartbeatInterval(clock, interval))
+          seeds.map(fromNode)
+            .foreach(_ ! SetHeartbeatInterval(self_as, HeartbeatInterval(clock, interval)))
         }
         case Some(ref) => {
           interval = millis
-          changeInterval(ref)
+          changeInterval(fromNode(ref))
         }
       }
     }
@@ -66,7 +73,13 @@ final class IoTDevice(
       }
       context.system.scheduler.scheduleOnce(tickInterval.millis, self, Tick)
     }
-    case AddSeed(seed) => seeds += seed
+    case AddSeed(seed) => {
+      seeds += seed.anchorPath.address.host
+        .zip(seed.anchorPath.address.port)
+        .map(tup => Node(tup._1, tup._2))
+        .getOrElse(id)
+    }
+    case a => arjun(s"Unhandled message $a")
   }
 
   def changeInterval(ref: ActorSelection): Unit = {
@@ -79,6 +92,9 @@ final class IoTDevice(
     heartbeatReqs = new IntervalStorage((intervalStorageCapacity), interval)
     heartbeatReqs
   }
+
+  def fromNode(node: Node): ActorSelection =
+    context.actorSelection(addressString(node, "/user/bench-member"))
 
   def selection(ref: ActorRef): ActorSelection = context.actorSelection(ref.path)
 }
