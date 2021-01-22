@@ -33,10 +33,12 @@ Don't forget to include the "-D" in front of the property name.
 # DataCenterMain
 To run IoTMain, use the following command from the project root:
 ```
-$ sbt "runMain DataCenterMain <dc_port> <host_1> <port_1> ... <host_n> <port_n>"
+$ sbt [props] "runMain DataCenterMain <dc_port> <host_1> <port_1> ... <host_n> <port_n>"
 ```
 
 Don't forget to include the quote marks.
 Parameters:
 - ```dc_port```: The main will operate on the port you specify with ```dc_port>```.
 - ```host_1```, ```port_1```: The host-port pairs are seeds for joining the cluster in the data center. If this is the first server you're defining in the cluster, don't include any host-port pairs. Servers will automatically detect the failure of devices via phi-accrual, and stop sending heartbeats when it does.
+
+DataCenterMain uses the same Java system properties as IoTMain.
