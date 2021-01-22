@@ -21,6 +21,7 @@ final class ReqHeartbeatSender(
   implicit val node: SelfUniqueAddress =
     DistributedData(context.system).selfUniqueAddress
   val phi_threshold = 10
+  val self_as = context.actorSelection(self.path)
 
   val devicesKey = ORMapKey[ActorSelection, HeartbeatInterval]("devices")
   var storage = new IntervalStorage(capacity, interval)
@@ -30,7 +31,7 @@ final class ReqHeartbeatSender(
 
   def receive: Receive = {
     case Tick => {
-      arjun(s"Sending ReqHeartbeat to $destination")
+      arjun(s"Sending ReqHeartbeat with interval $interval ms to $destination")
       arjun(storage.summary)
       if (storage.phi < phi_threshold) {
         unreliableSelection(destination, ReqHeartbeat(self))
@@ -53,12 +54,13 @@ final class ReqHeartbeatSender(
     }
     case c: Replicator.Changed[ORMap[ActorSelection, HeartbeatInterval]] => {
       c.dataValue.get(destination) match {
-        case Some(HeartbeatInterval(_, millis)) =>
-          arjun(s"interval updated to $millis milliseconds")
-          if (millis != interval) {
-            storage = new IntervalStorage(capacity, millis)
+        case Some(hi) =>
+          arjun(s"interval updated to $hi")
+          if (hi.interval_millis != interval) {
+            storage = new IntervalStorage(capacity, hi.interval_millis)
           }
-          interval = millis
+          interval = hi.interval_millis
+          destination ! SetHeartbeatInterval(self_as, hi)
         case None =>
           self ! PoisonPill
       }

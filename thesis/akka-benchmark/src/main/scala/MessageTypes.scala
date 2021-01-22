@@ -9,7 +9,6 @@ case object Tick
 case class ReqHeartbeat(replyTo: ActorRef)
 case class JoinRejected()
 case class NewInterval(millis: Int)
-case class AddSeed(seed: ActorSelection)
 
 //Message Types: Data Center
 case class Heartbeat(from: ActorRef)
