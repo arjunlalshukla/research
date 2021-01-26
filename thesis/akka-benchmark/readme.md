@@ -4,15 +4,14 @@ This is the benchmark for Akka IoT. The project has 2 drivers: IoTMain and DataC
 # IoTMain
 To run IoTMain, use the following command from the project root:
 ```
-$ sbt [props] "runMain IoTMain <iot_port> <interval> <second_interval> <change_interval_delay> <new_intervals_fail> <host_1> <port_1> [... <host_n> <port_n>"
+$ sbt [props] "runMain IoTMain <iot_port> <interval> <change_interval_interval> <host_1> <port_1> [... <host_n> <port_n>"
 ```
 
 Don't forget to include the quote marks.
 Parameters:
 - ```iot_port```: The main will operate on the port you specify with iot_port.
 - ```interval```: The heartbeat interval in milliseconds
-- ```second_interval```: The main will change the interval to this after the time specified with ```change_interval_delay```
-- ```new_intervals_fail```: A test parameter. Use "false"
+- ```change_interval_interval```: The interval with which to increase the heartbeat interval by 1 millisecond.
 - ```host_1```, ```port_1```: The host-port pairs are seeds for contacting the cluster. If you don't include at least one host-port pair, your device won't be able to contact the cluster. At this point in development, only you should provide one seed. Every server the device contacts will send heartbeats to the device: the device will contact every seed at once to establish a connection. This will result in multiple simultaneous connections, but the device actor is only meant to handle one at a time. In the event where the server a device is connected to becomes unresponsive, the device will send initiation messages (notifying the server of its preferred heartbeat interval) until it receives a heartbeat request.
 
 For messages sent between JVM processes, we can artificially drop and delay messages to simulate an unreliable network.
