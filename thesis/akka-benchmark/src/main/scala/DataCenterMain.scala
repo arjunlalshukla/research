@@ -39,5 +39,5 @@ object DataCenterMain extends App {
   """))
 
   ActorSystem(clusterName, config)
-    .actorOf(Props[DataCenterMember](), "bench-member")
+    .actorOf(Props(new DataCenterMember(Node(host, akkaPort))), "bench-member")
 }

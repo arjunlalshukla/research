@@ -4,12 +4,15 @@ import akka.cluster.ddata.{DistributedData, ORMap, ORMapKey, Replicator, SelfUni
 
 import scala.concurrent.duration._
 import Utils.{arjun, unreliableRef, unreliableSelection}
+import akka.cluster.Cluster
+import akka.cluster.ClusterEvent.{CurrentClusterState, InitialStateAsEvents, MemberEvent, UnreachableMember}
 
 final class ReqHeartbeatSender(
-  var interval: Int,
   val destination: ActorSelection,
   val supervisor: ActorRef,
-  val capacity: Int
+  val capacity: Int,
+
+  var interval: Int
 ) extends Actor {
   import context.dispatcher
   implicit val logContext = destination.anchorPath.address.host
@@ -17,54 +20,19 @@ final class ReqHeartbeatSender(
     .map(tup => ArjunContext(s"HeartbeatReqSender ${tup._1}:${tup._2}"))
     .getOrElse(ArjunContext(s"HeartbeatReqSender ${destination.anchorPath}"))
   arjun(s"My path is ${context.self.path.toString}")
-  val replicator = DistributedData(context.system).replicator
-  implicit val node: SelfUniqueAddress =
-    DistributedData(context.system).selfUniqueAddress
+
   val phi_threshold = 10
   val self_as = context.actorSelection(self.path)
 
-  val devicesKey = ORMapKey[ActorSelection, HeartbeatInterval]("devices")
   var storage = new IntervalStorage(capacity, interval)
 
-  replicator ! Subscribe(devicesKey, self)
   self ! Tick
 
   def receive: Receive = {
-    case Tick => {
-      arjun(s"Sending ReqHeartbeat with interval $interval ms to $destination")
-      arjun(storage.summary)
-      if (storage.phi < phi_threshold) {
-        unreliableSelection(destination, ReqHeartbeat(self))
-        context.system.scheduler.scheduleOnce(interval.millis, self, Tick)
-      } else {
-        supervisor ! RemoveDevice(destination)
-      }
-    }
-    case shi @ SetHeartbeatInterval(from, hi) => {
-      arjun(s"Received HeartbeatInterval $hi from ${from.anchorPath} for $destination")
-      supervisor ! shi
-    }
-    case Heartbeat(from) => {
-      arjun(s"Received Heartbeat from ${from.path}")
-      if (selection(from) == destination) {
-        storage.push()
-      } else {
-        arjun(s"Does not match $destination")
-      }
-    }
-    case c: Replicator.Changed[ORMap[ActorSelection, HeartbeatInterval]] => {
-      c.dataValue.get(destination) match {
-        case Some(hi) =>
-          arjun(s"interval updated to $hi")
-          if (hi.interval_millis != interval) {
-            storage = new IntervalStorage(capacity, hi.interval_millis)
-          }
-          interval = hi.interval_millis
-          destination ! SetHeartbeatInterval(self_as, hi)
-        case None =>
-          self ! PoisonPill
-      }
-    }
+    case Tick => tick()
+    case hi: HeartbeatInterval => heartbeatInterval(hi)
+    case Heartbeat(from) => heartbeat(from)
+    case MultipleSenders(from) => supervisor ! AmISender(from, self)
     case a => arjun(s"Unhandled message $a")
   }
 
@@ -74,4 +42,34 @@ final class ReqHeartbeatSender(
   }
 
   def selection(ref: ActorRef): ActorSelection = context.actorSelection(ref.path)
+
+  // Message Reactions
+  def tick(): Unit = {
+    arjun(s"Sending ReqHeartbeat with interval $interval ms to $destination")
+    arjun(storage.summary)
+    if (storage.phi < phi_threshold) {
+      unreliableSelection(destination, ReqHeartbeat(self))
+      context.system.scheduler.scheduleOnce(interval.millis, self, Tick)
+    } else {
+      supervisor ! RemoveDevice(destination)
+    }
+  }
+
+  def heartbeatInterval(hi: HeartbeatInterval): Unit = {
+    arjun(s"Received SetHeartbeatInterval $hi")
+    if (hi.interval_millis != interval) {
+      storage = new IntervalStorage(capacity, hi.interval_millis)
+      interval = hi.interval_millis
+    }
+    destination ! SetHeartbeatInterval(self_as, hi)
+  }
+
+  def heartbeat(from: ActorRef): Unit = {
+    arjun(s"Received Heartbeat from ${from.path}")
+    if (selection(from) == destination) {
+      storage.push()
+    } else {
+      arjun(s"Does not match $destination")
+    }
+  }
 }

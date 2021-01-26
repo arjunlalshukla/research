@@ -1,4 +1,4 @@
-import Utils.{addressString, arjun, unreliableRef, unreliableSelection}
+import Utils.{addressString, arjun, toNode, unreliableRef, unreliableSelection}
 import akka.actor.{Actor, ActorRef, ActorSelection}
 import scala.concurrent.duration.DurationInt
 
@@ -15,8 +15,10 @@ final class IoTDevice(
   val slowNetTolerance = 0.5
   val phi_threshold = 10.0
   val self_as = context.actorSelection(self.path)
+  val serverLogCapacity = 10
 
   var server: Option[Node] = None
+  var serverLog = new FrequencyBuffer[ActorRef](serverLogCapacity)
   var heartbeatReqs = newStorage()
   var numIntervals = 1L
   var numIntervalsServerPOV = 0L
@@ -47,13 +49,6 @@ final class IoTDevice(
     context.actorSelection(addressString(node, "/user/bench-member"))
   }
 
-  def toNode(as: ActorSelection): Node = {
-    as.anchorPath.address.host
-      .zip(as.anchorPath.address.port)
-      .map(tup => Node(tup._1, tup._2))
-      .getOrElse(id)
-  }
-
   def selection(ref: ActorRef): ActorSelection = context.actorSelection(ref.path)
 
   // Message Reactions
@@ -66,6 +61,11 @@ final class IoTDevice(
       newStorage()
       newServer(Option(node))
       seeds += node
+    }
+    serverLog.push(replyTo)
+    if (serverLog.changes + 1 != serverLog.frequencies.size) {
+      arjun(s"Multiple ReqHeartbeatSenders detected: ${serverLog.frequencies.keys}")
+      serverLog.frequencies.keys.foreach(_ ! MultipleSenders(self_as))
     }
     arjun(s"Received ReqHeartbeat from $replyTo")
     heartbeatReqs.push()
@@ -97,7 +97,7 @@ final class IoTDevice(
       s"millis = $millis; previous server POV = $numIntervalsServerPOV; " +
       s"num intervals = $numIntervals; from $from"
     )
-    newServer(Option(toNode(from)))
+    newServer(Option(toNode(from, id)))
     numIntervalsServerPOV = num
     if (numIntervalsServerPOV < numIntervals) {
       newInterval(interval)

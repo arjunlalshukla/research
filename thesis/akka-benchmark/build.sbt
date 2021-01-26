@@ -10,3 +10,4 @@ libraryDependencies += "com.typesafe.akka" %% "akka-remote" % AkkaVersion
 libraryDependencies += "com.typesafe.akka" %% "akka-cluster" % AkkaVersion
 libraryDependencies += "com.typesafe.akka" %% "akka-distributed-data" % AkkaVersion
 
+assemblyJarName in assembly := "akka-benchmark.jar"

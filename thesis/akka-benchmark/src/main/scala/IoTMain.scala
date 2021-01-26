@@ -5,7 +5,6 @@ import com.typesafe.config.ConfigFactory
 import scala.concurrent.duration.DurationInt
 
 object IoTMain extends App {
-  sys.env.toSeq.sortBy(_._1).foreach(println)
   implicit  val loginContext = ArjunContext("DataCenterMain")
   val requiredArgs = 5
   if (args.length % 2 != requiredArgs % 2 || args.length < requiredArgs) {
