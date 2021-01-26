@@ -61,7 +61,7 @@ final class ReqHeartbeatSender(
       storage = new IntervalStorage(capacity, hi.interval_millis)
       interval = hi.interval_millis
     }
-    destination ! SetHeartbeatInterval(self_as, hi)
+    unreliableSelection(destination, SetHeartbeatInterval(self_as, hi))
   }
 
   def heartbeat(from: ActorRef): Unit = {

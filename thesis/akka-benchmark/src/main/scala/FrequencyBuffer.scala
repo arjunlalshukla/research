@@ -1,7 +1,7 @@
 import scala.collection.mutable
 
 final class FrequencyBuffer[T](private[this] var capacity: Int) {
-  private[this] val buffer = mutable.ArrayDeque.empty[T]
+  val buffer = mutable.ArrayDeque.empty[T]
   private[this] var _frequencies = Map.empty[T, Int].withDefaultValue(0)
   private[this] var _changes = 0
   setCapacity(capacity)
@@ -10,7 +10,7 @@ final class FrequencyBuffer[T](private[this] var capacity: Int) {
   def frequencies: Map[T, Int] = _frequencies
 
   def removeLast(): Unit = buffer.removeLastOption().foreach { remove =>
-    if (buffer.length >= 2 && buffer(buffer.length-1) != buffer(buffer.length-2)) {
+    if (buffer.nonEmpty && buffer(buffer.length-1) != remove) {
       _changes -= 1
     }
     _frequencies(remove) match {

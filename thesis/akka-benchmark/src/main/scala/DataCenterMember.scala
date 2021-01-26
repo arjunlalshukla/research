@@ -1,4 +1,4 @@
-import Utils.{addressString, arjun, responsibility, toNode}
+import Utils.{addressString, arjun, responsibility, toNode, unreliableSelection}
 import akka.actor.{Actor, ActorRef, ActorSelection, PoisonPill, Props}
 import akka.cluster.{Cluster, Member}
 import akka.cluster.ClusterEvent.{CurrentClusterState, MemberEvent, MemberRemoved, MemberUp, UnreachableMember}
@@ -78,7 +78,7 @@ final class DataCenterMember(val id: Node) extends Actor {
       }
       heartbeatReqSenders(from) ! hi
     } else {
-      manager ! SetHeartbeatInterval(from, hi)
+      unreliableSelection(manager, SetHeartbeatInterval(from, hi))
     }
   }
 

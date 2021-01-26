@@ -64,8 +64,10 @@ final class IoTDevice(
     }
     serverLog.push(replyTo)
     if (serverLog.changes + 1 != serverLog.frequencies.size) {
-      arjun(s"Multiple ReqHeartbeatSenders detected: ${serverLog.frequencies.keys}")
-      serverLog.frequencies.keys.foreach(_ ! MultipleSenders(self_as))
+      arjun(s"Multiple ReqHeartbeatSenders detected. Changes = ${serverLog.changes}; " +
+        s"Servers = ${serverLog.frequencies.keys}; Buffer = ${serverLog.buffer}")
+      serverLog.frequencies.keys.foreach(unreliableRef(_, MultipleSenders(self_as)))
+      serverLog = new FrequencyBuffer[ActorRef](serverLogCapacity)
     }
     arjun(s"Received ReqHeartbeat from $replyTo")
     heartbeatReqs.push()
