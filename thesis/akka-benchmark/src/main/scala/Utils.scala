@@ -54,36 +54,41 @@ object Utils {
     msg: Any,
     max_delay: Int = Utils.max_delay,
     min_delay: Int = Utils.min_delay,
-    fail_prob: Double = fail_prob
+    fail_prob: Double = fail_prob,
+    toPrint: Option[String] = None
   )(implicit context: ActorContext, logContext: ArjunContext): Unit = {
+    val p = toPrint.getOrElse(msg.toString)
     if (min_delay == 0 && max_delay == 0 && fail_prob == 0) {
       ref ! msg
     } else if (rand.nextDouble > fail_prob) {
       import context.dispatcher
       val delay = rand_range(min_delay, max_delay).millis
       context.system.scheduler.scheduleOnce(delay)(ref ! msg)
-      arjun(s"Delay of $delay milliseconds put on send of $msg to $ref")
+      arjun(s"Delay of $delay milliseconds put on send of $p to $ref")
     } else {
-      arjun(s"Dropped message due to unreliable send of $msg to $ref")
+      arjun(s"Dropped message due to unreliable send of $p to $ref")
     }
   }
+
 
   def unreliableSelection(
     ref: ActorSelection,
     msg: Any,
     max_delay: Int = Utils.max_delay,
     min_delay: Int = Utils.min_delay,
-    fail_prob: Double = fail_prob
+    fail_prob: Double = fail_prob,
+    toPrint: Option[String] = None
   )(implicit context: ActorContext, logContext: ArjunContext): Unit = {
+    val p = toPrint.getOrElse(msg.toString)
     if (min_delay == 0 && max_delay == 0 && fail_prob == 0) {
       ref ! msg
     } else if (rand.nextDouble > fail_prob) {
       import context.dispatcher
       val delay = rand_range(min_delay, max_delay).millis
       context.system.scheduler.scheduleOnce(delay)(ref ! msg)
-      arjun(s"Delay of $delay milliseconds put on send of $msg to $ref")
+      arjun(s"Delay of $delay milliseconds put on send of $p to $ref")
     } else {
-      arjun(s"Dropped message due to unreliable send of $msg to $ref")
+      arjun(s"Dropped message due to unreliable send of $p to $ref")
     }
   }
 }

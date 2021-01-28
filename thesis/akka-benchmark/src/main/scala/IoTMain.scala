@@ -28,6 +28,7 @@ object IoTMain extends App {
   val seeds = args.drop(requiredArgs-2).sliding(2,2).toSeq
     .map(seq => Node(seq(0), seq(1).toInt))
 
+  val node = Node(host, port)
   val config = ConfigFactory.load(ConfigFactory.parseString(s"""
     akka {
       actor {
@@ -46,10 +47,10 @@ object IoTMain extends App {
 
   val system = ActorSystem(clusterName, config)
   val actor = system.actorOf(Props(
-    new IoTDevice(seeds.toSet, Node(host, port), interval)),
-  "IoT-device")
+    new IoTDevice(seeds.toSet, node, interval)), "IoT-device")
+  system.actorOf(Props(new IoTBusiness(node, actor)), "IoT-business")
   import system.dispatcher
-  system.scheduler.scheduleAtFixedRate(changeIntervalInterval, changeIntervalInterval) (() => {
+  system.scheduler.scheduleWithFixedDelay(changeIntervalInterval, changeIntervalInterval) (() => {
     IntervalHolder.interval += 1
     actor ! NewInterval(IntervalHolder.interval)
   })

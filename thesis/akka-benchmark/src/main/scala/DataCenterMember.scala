@@ -2,8 +2,8 @@ import Utils.{addressString, arjun, responsibility, toNode, unreliableSelection}
 import akka.actor.{Actor, ActorRef, ActorSelection, PoisonPill, Props}
 import akka.cluster.{Cluster, Member}
 import akka.cluster.ClusterEvent.{CurrentClusterState, MemberEvent, MemberRemoved, MemberUp, UnreachableMember}
-import akka.cluster.ddata.Replicator.{Subscribe, Update, WriteLocal}
-import akka.cluster.ddata._
+import akka.cluster.ddata.{DistributedData, ORMap, ORMapKey, Replicator, SelfUniqueAddress}
+import akka.cluster.ddata.Replicator.{Update, WriteLocal}
 
 import scala.collection.mutable
 import scala.collection.mutable.TreeSet
@@ -24,16 +24,17 @@ final class DataCenterMember(val id: Node) extends Actor {
   var heartbeatReqSenders = Map.empty[ActorSelection, ActorRef]
   var members = TreeSet.empty[Member]
   var servers = IndexedSeq(self_as)
+  var subscribers = mutable.HashSet.empty[ActorRef]
 
   cluster.registerOnMemberUp {
     cluster.subscribe(self, classOf[MemberEvent], classOf[UnreachableMember])
   }
-  replicator ! Subscribe(devicesKey, self)
+  replicator ! Replicator.Subscribe(devicesKey, self)
 
   def receive: Receive = {
     case SetHeartbeatInterval(from, hi) => setHeartbeatInterval(from, hi)
     case c: Replicator.Changed[ORMap[ActorSelection, HeartbeatInterval]] =>
-      devicesUpdated(c.dataValue.entries)
+      devicesUpdate(c.dataValue.entries)
     case RemoveDevice(device) => removeDevice(device)
     case RemoveHeartbeatReqSender(device, toTerminate) =>
       removeHeartbeatReqSender(device, toTerminate)
@@ -41,6 +42,10 @@ final class DataCenterMember(val id: Node) extends Actor {
     case AmISender(from, sender) => amISender(from, sender)
     case MemberUp(member) => addMember(member)
     case MemberRemoved(member, _) => removeMember(member)
+    case SubscribeDevices(subscriber) => {
+      arjun(s"Added subscriber $subscriber")
+      subscribers.add(subscriber)
+    }
     case a => arjun(s"Unhandled message $a")
   }
 
@@ -58,6 +63,16 @@ final class DataCenterMember(val id: Node) extends Actor {
 
   def serverString: String = servers.map('"' + _.toString + '"').mkString(",")
 
+  def devicesUpdate(newDevices: Map[ActorSelection, HeartbeatInterval]): Unit = {
+    arjun(s"Devices updated to $newDevices")
+    devices = newDevices
+  }
+
+  def senderUpdated(newSenders: Map[ActorSelection, ActorRef]): Unit = {
+    heartbeatReqSenders = newSenders
+    subscribers.foreach(_ ! Devices(heartbeatReqSenders.keySet))
+  }
+
   // Message Reactions
   def setHeartbeatInterval(from: ActorSelection, hi: HeartbeatInterval): Unit = {
     arjun(s"SetHeartbeatInterval received: $hi from $from")
@@ -69,12 +84,13 @@ final class DataCenterMember(val id: Node) extends Actor {
           ORMap.empty[ActorSelection, HeartbeatInterval],
           WriteLocal
         )(_ :+ from -> hi)
-        devices += from -> hi
+        devicesUpdate(devices + (from -> hi))
       }
       if (!heartbeatReqSenders.contains(from)) {
-        heartbeatReqSenders += from -> context.actorOf(Props(
+        val actor = context.actorOf(Props(
           new ReqHeartbeatSender(from, self, capacity, hi.interval_millis)
         ))
+        senderUpdated(heartbeatReqSenders + (from -> actor))
       }
       heartbeatReqSenders(from) ! hi
     } else {
@@ -82,16 +98,11 @@ final class DataCenterMember(val id: Node) extends Actor {
     }
   }
 
-  def devicesUpdated(newDevices: Map[ActorSelection, HeartbeatInterval]): Unit = {
-    arjun(s"Devices updated to $newDevices")
-    devices = newDevices
-  }
-
   def removeDevice(device: ActorSelection): Unit = {
     arjun(s"Device removed: $device")
     heartbeatReqSenders.get(device).foreach(_ ! PoisonPill)
-    heartbeatReqSenders -= device
-    devices -= device
+    senderUpdated(heartbeatReqSenders - device)
+    devicesUpdate(devices - device)
     replicator ! Update(
       devicesKey,
       ORMap.empty[ActorSelection, HeartbeatInterval],
@@ -104,7 +115,7 @@ final class DataCenterMember(val id: Node) extends Actor {
       case Some(actor) =>
         arjun(s"Heartbeat sender removed for $device")
         actor ! PoisonPill
-        heartbeatReqSenders -= device
+        senderUpdated(heartbeatReqSenders - device)
       case None =>
         arjun(s"Discarding removal of heartbeat sender for $device")
     }

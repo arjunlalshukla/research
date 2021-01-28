@@ -1,5 +1,7 @@
 import Utils.{addressString, arjun, toNode, unreliableRef, unreliableSelection}
 import akka.actor.{Actor, ActorRef, ActorSelection}
+
+import scala.collection.mutable
 import scala.concurrent.duration.DurationInt
 
 final class IoTDevice(
@@ -16,6 +18,7 @@ final class IoTDevice(
   val phi_threshold = 10.0
   val self_as = context.actorSelection(self.path)
   val serverLogCapacity = 10
+  val subscribers = mutable.Set.empty[ActorRef]
 
   var server: Option[Node] = None
   var serverLog = new FrequencyBuffer[ActorRef](serverLogCapacity)
