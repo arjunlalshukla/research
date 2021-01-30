@@ -4,7 +4,7 @@ import com.typesafe.config.ConfigFactory
 
 object CollectorMain extends App {
   implicit  val loginContext = ArjunContext("CollectorMain")
-  val requiredArgs = 3
+  val requiredArgs = 4
   if (args.length % 2 != requiredArgs % 2 || args.length < requiredArgs) {
     arjun(args.map('"'+_+'"').mkString(","))
     throw new IllegalArgumentException
@@ -14,6 +14,7 @@ object CollectorMain extends App {
   val akkaPort = args(0).toInt
   val reqInt = args(1).toInt
   val dispInt = args(2).toInt
+  val logNonTotal = args(3).toBoolean
 
   val node = Node(host, akkaPort)
 
@@ -40,5 +41,6 @@ object CollectorMain extends App {
         addressString(Node(seq(0), seq(1).toInt), "/user/bench-business")
       )
     }
-  system.actorOf(Props(new Collector(nodes, node, dispInt, reqInt)), "collector")
+  system.actorOf(Props(
+    new Collector(nodes, node, dispInt, reqInt, logNonTotal)), "collector")
 }

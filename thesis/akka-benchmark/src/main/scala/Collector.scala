@@ -8,7 +8,8 @@ final class Collector(
   nodes: Set[ActorSelection],
   val id: Node,
   val displayInterval: Int,
-  val reqReportInterval: Int
+  val reqReportInterval: Int,
+  val logNonTotal: Boolean
 ) extends Actor {
   implicit val logContext = ArjunContext("Collector")
   arjun(s"My path is ${context.self.path.toString}")
@@ -35,8 +36,8 @@ final class Collector(
       totals = totals ++ toAdd.map(tup => (from -> tup._1) -> tup._2)
       context.system.scheduler.scheduleOnce(reqReportInterval.millis) {
         arjun("Sending request for report number " +
-          s"${numReports(from_as) + 1L} for $from_as")
-        unreliableSelection(from_as, ReqReport(self))
+          s"${numReports(from_as) + 1L} for $from_as", logNonTotal)
+        unreliableSelection(from_as, ReqReport(self), log = logNonTotal)
       }
       context.system.scheduler.scheduleOnce(
         (tickDelay + reqReportInterval).millis,
@@ -45,8 +46,8 @@ final class Collector(
     }
     case Tick(dest, seqNum) =>  {
       if (seqNum == numReports(dest)) {
-        arjun(s"Resending ReqReport ${numReports(dest)} to $dest")
-        unreliableSelection(dest, ReqReport(self))
+        arjun(s"Resending ReqReport ${numReports(dest)} to $dest", logNonTotal)
+        unreliableSelection(dest, ReqReport(self), log = logNonTotal)
         context.system.scheduler.scheduleOnce(
           (tickDelay + reqReportInterval).millis,
           self, Tick(dest, seqNum)
@@ -57,9 +58,11 @@ final class Collector(
       val serverDevice = totals
         .groupBy(tup => (context.actorSelection(tup._1._1.path), tup._1._2))
         .map { case (sd, total) => (sd, total.values.sum/factor)}
+      val sd = serverDevice
         .map(tup => (toNode(tup._1._1, id), toNode(tup._1._2, id), tup._2))
         .map { case (server, device, total) => s"$server <-> $device = $total" }
-      arjun(s"Totals \n${serverDevice.mkString("\n")}")
+        .toSeq.sorted
+      arjun(s"Total: ${serverDevice.values.sum}; Subtotals: \n${sd.mkString("\n")}")
       context.system.scheduler
         .scheduleOnce(displayInterval.millis, self, Display)
     }

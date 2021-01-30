@@ -15,7 +15,7 @@ final class ReportReceiver(
   arjun(s"My path is ${context.self.path.toString}")
   import context.dispatcher
   var numReports = 0L
-  val tickDelay = 5*Utils.max_delay
+  val tickDelay = 2*Utils.max_delay
 
   private[this] case class Tick(seqNum: Long)
 
