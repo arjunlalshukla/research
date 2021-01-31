@@ -1,6 +1,8 @@
 import Utils.{arjun, toNode, unreliableSelection}
 import akka.actor.{Actor, ActorRef, ActorSelection}
 
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 import scala.collection.mutable
 import scala.concurrent.duration.DurationInt
 
@@ -22,6 +24,7 @@ final class Collector(
   val numReports = mutable.Map.empty.concat(nodes.map(_ -> 0L))
   val tickDelay = 2*Utils.max_delay
   val factor = 1.to(1000).sum
+  val started = LocalDateTime.now()
 
   private[this] case class Tick(dest: ActorSelection, seqNum: Long)
   private[this] case object Display
@@ -62,7 +65,10 @@ final class Collector(
         .map(tup => (toNode(tup._1._1, id), toNode(tup._1._2, id), tup._2))
         .map { case (server, device, total) => s"$server <-> $device = $total" }
         .toSeq.sorted
-      arjun(s"Total: ${serverDevice.values.sum}; Subtotals: \n${sd.mkString("\n")}")
+      val elapsed = ChronoUnit.MILLIS.between(started, LocalDateTime.now())
+      arjun(s"Total: ${serverDevice.values.sum}; Time: $elapsed ms; "
+        // + s"Subtotals: \n${sd.mkString("\n")}"
+      )
       context.system.scheduler
         .scheduleOnce(displayInterval.millis, self, Display)
     }

@@ -70,13 +70,13 @@ object PeriodicKiller extends App {
     "IoTMain", s"$port", s"$hb_int", (10*hb_int).toString
   ).appendedAll(seeds)).toArray
 
+  dc_cmds.foreach(tup => start(tup._1, tup._2))
   if (collecting) {
     arjun(s"Starting collector: ${collector.mkString(" ")}")
     val pb = new ProcessBuilder(collector :_*)
     pb.inheritIO()
     pb.start()
   }
-  dc_cmds.foreach(tup => start(tup._1, tup._2))
   iot_cmds.foreach(tup => start(tup._1, tup._2))
 
   def start(pid: String, cmd: Array[String]): Unit = {
