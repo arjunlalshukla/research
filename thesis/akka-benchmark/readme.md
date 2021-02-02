@@ -50,7 +50,7 @@ Parameters:
 # Running CollectorMain
 To run CollectorMain, use the following command from the project root:
 ```
-$ java -cp target/scala-2.13/akka-benchmark.jar [props] CollectorMain <collector_port> <request_interval> <log_non_total> <host_1> <port_1> [... <host_n> <port_n>]
+$ java -cp target/scala-2.13/akka-benchmark.jar [props] CollectorMain <collector_port> <request_interval> <display_interval> <log_non_total> <host_1> <port_1> [... <host_n> <port_n>]
 ```
 
 Parameters:
@@ -61,4 +61,19 @@ Parameters:
 - ```host_1```, ```port_1```: The host-port pairs are the servers in the cluster the collector will send data requests to.
 
 
+# Running PeriodicKiller
+To run PeriodicKiller, use the following command from the project root:
+```
+$ java -cp target/scala-2.13/akka-benchmark.jar [props] PeriodicKiller <false | true <collector_port> <request_interval> <display_interval> <log_non_total>> <false | true <min_kill_delay> <max_kill_delay>> <host_1> <port_1> [... <host_n> <port_n>] "~dc" [<port_1> ... <port_n>] "~iot" <interval> [<port_1> ... <port_n>]
+```
 
+Parameters:
+- If false, PeriodicKiller will not spawn a Collector. If true, pass use the first 4 arguments to CollectorMain.
+- If false, PeriodicKiller will not kill processes. If true, pass the minimum delay and maximum delay the spawned DataCenterMain and IoTMain processes will be killed and restarted again.
+- ```host_1```, ```port_1```: This list is passed as the seed nodes for IoTMain and DataCenterMain processes, and the list of seeds to contact for CollectorMain.
+- ```~dc``` port list: The list of ports spawned DataCenterMain processes will use.
+- ```interval```: The heartbeat interval for spawned IoTMain processes. Meaningless if the ```~iot``` port list is empty.
+- ```~iot``` port list: The list of ports spawned IoTMain processes will use.
+
+
+Because the command is so long, it may be advisable to put in a file. For each process PeriodicKiller spawns, its ```MIN_DELAY```, ```MAX_DELAY``` and ```FAIL_PROB``` properties are passed onto its child processes. Its child processes are automatically killed when it is.
