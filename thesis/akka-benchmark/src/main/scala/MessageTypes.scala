@@ -6,12 +6,20 @@ import akka.cluster.Member
 case class Node(host: String, port: Int)
 case class ArjunContext(s: String)
 case class HeartbeatInterval(clock: Long, interval_millis: Int)
-  extends ReplicatedData {
+  extends ReplicatedData with Ordered[HeartbeatInterval] {
   type T = HeartbeatInterval
   def merge(that: HeartbeatInterval): HeartbeatInterval = {
     if (clock > that.clock) this
     else if (clock < that.clock) that
     else HeartbeatInterval(clock, interval_millis max that.interval_millis)
+  }
+
+  def compare(that: HeartbeatInterval): Int = {
+    if (clock > that.clock) 1
+    else if (clock < that.clock) -1
+    else if (interval_millis < that.interval_millis) 1
+    else if (interval_millis > that.interval_millis) -1
+    else 0
   }
 }
 
