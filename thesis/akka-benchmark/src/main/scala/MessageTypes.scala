@@ -1,5 +1,7 @@
 import akka.actor.{ActorRef, ActorSelection}
 import akka.cluster.ddata.ReplicatedData
+import scala.collection.immutable.TreeSet
+import akka.cluster.Member
 
 case class Node(host: String, port: Int)
 case class ArjunContext(s: String)
@@ -32,10 +34,13 @@ case class SetHeartbeatInterval(from: ActorSelection, hi: HeartbeatInterval)
 case class RemoveHeartbeatReqSender(device: ActorSelection, toTerminate: ActorRef)
 case class RemoveDevice(device: ActorSelection)
 case class AmISender(dest: ActorSelection, sender: ActorRef)
-case class SubscribeDevices(subscriber: ActorRef)
+case class SubscribeDevices(subscriber: ActorSelection)
+
+// MessageTypes: IoTBusiness
+case class Manager(port: Int, node: Option[Node])
 
 // Message Types: Data Center Business
-case class Devices(set: Set[ActorSelection])
+case class Devices(port: Int, set: Set[ActorSelection], members: TreeSet[Member], devices: Map[ActorSelection, HeartbeatInterval])
 case class Increment(device: ActorSelection, amount: Long)
 
 // Message Types: Report Receiver

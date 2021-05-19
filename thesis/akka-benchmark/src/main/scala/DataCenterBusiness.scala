@@ -13,14 +13,14 @@ final class DataCenterBusiness(
   var devices = Map.empty[ActorSelection, ActorRef]
   var totals = Map.empty[ActorSelection, Long].withDefaultValue(0L)
 
-  dcMember ! SubscribeDevices(self)
+  dcMember ! SubscribeDevices(self_as)
 
   def update(ioTReport: IoTReport, from: ActorSelection): Increment = {
     Increment(from, ioTReport.data.sum)
   }
 
   def receive: Receive = {
-    case Devices(set) => {
+    case Devices(_, set, _, _) => {
       val newDevices = set.map { as =>
         val str = addressString(toNode(as, id), "/user/IoT-business")
         context.actorSelection(str)

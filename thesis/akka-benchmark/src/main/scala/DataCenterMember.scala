@@ -4,12 +4,11 @@ import akka.cluster.{Cluster, Member}
 import akka.cluster.ClusterEvent.{CurrentClusterState, MemberEvent, MemberRemoved, MemberUp, UnreachableMember}
 import akka.cluster.ddata.{DistributedData, ORMap, ORMapKey, Replicator, SelfUniqueAddress}
 import akka.cluster.ddata.Replicator.{Update, WriteLocal}
-
 import scala.collection.mutable
-import scala.collection.mutable.TreeSet
+import scala.collection.immutable.TreeSet
 
 final class DataCenterMember(val id: Node) extends Actor {
-  implicit val logContext = ArjunContext("DataCenterMember")
+  implicit val logContext = ArjunContext(s"DataCenterMember-${id.port}")
   arjun(s"My path is ${context.self.path.toString}")
   val replicator = DistributedData(context.system).replicator
   implicit val node: SelfUniqueAddress =
@@ -24,7 +23,7 @@ final class DataCenterMember(val id: Node) extends Actor {
   var heartbeatReqSenders = Map.empty[ActorSelection, ActorRef]
   var members = TreeSet.empty[Member]
   var servers = IndexedSeq(self_as)
-  var subscribers = mutable.HashSet.empty[ActorRef]
+  var subscribers = mutable.HashSet.empty[ActorSelection]
 
   cluster.registerOnMemberUp {
     cluster.subscribe(self, classOf[MemberEvent], classOf[UnreachableMember])
@@ -44,6 +43,7 @@ final class DataCenterMember(val id: Node) extends Actor {
     case MemberRemoved(member, _) => removeMember(member)
     case SubscribeDevices(subscriber) => {
       arjun(s"Added subscriber $subscriber")
+      subscriber ! Devices(id.port, heartbeatReqSenders.keySet, members, devices)
       subscribers.add(subscriber)
     }
     case a => arjun(s"Unhandled message $a")
@@ -66,11 +66,15 @@ final class DataCenterMember(val id: Node) extends Actor {
   def devicesUpdate(newDevices: Map[ActorSelection, HeartbeatInterval]): Unit = {
     arjun(s"Devices updated to $newDevices")
     devices = newDevices
+    notify_subrs()
   }
+
+  def notify_subrs(): Unit =
+    subscribers.foreach(_ ! Devices(id.port, heartbeatReqSenders.keySet, members, devices))
 
   def senderUpdated(newSenders: Map[ActorSelection, ActorRef]): Unit = {
     heartbeatReqSenders = newSenders
-    subscribers.foreach(_ ! Devices(heartbeatReqSenders.keySet))
+    notify_subrs()
   }
 
   // Message Reactions
@@ -122,22 +126,25 @@ final class DataCenterMember(val id: Node) extends Actor {
   }
 
   def removeMember(member: Member): Unit = {
-    members.remove(member);
-    updateServers();
+    members -= member
+    updateServers()
+    notify_subrs()
     arjun(s"Member removed: $member; All servers: $serverString")
   }
 
   def addMember(member: Member): Unit = {
-    members.add(member);
-    updateServers();
+    members += member
+    updateServers()
+    notify_subrs()
     arjun(s"Member added: $member; All servers: $serverString")
   }
 
   def newMembers(ccc: CurrentClusterState): Unit = {
-    members = mutable.TreeSet.from(ccc._1)
+    members = TreeSet.from(ccc._1)
     updateServers()
     arjun(s"Members updated to $serverString")
     heartbeatReqSenders.values.foreach(_ ! UpdateServers(servers))
+    notify_subrs()
   }
 
   def amISender(dest: ActorSelection, sender: ActorRef): Unit = {

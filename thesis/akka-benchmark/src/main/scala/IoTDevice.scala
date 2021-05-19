@@ -9,7 +9,7 @@ final class IoTDevice(
   val id: Node,
   var interval: Int
 ) extends Actor {
-  implicit val logContext = ArjunContext("IoTDevice")
+  implicit val logContext = ArjunContext(s"IoTDevice-${id.port}")
   arjun(s"My path is ${context.self.path.toString}")
   import context.dispatcher
 
@@ -18,7 +18,7 @@ final class IoTDevice(
   val phi_threshold = 10.0
   val self_as = context.actorSelection(self.path)
   val serverLogCapacity = 10
-  val subscribers = mutable.Set.empty[ActorRef]
+  val subscribers = mutable.Set.empty[ActorSelection]
 
   var server: Option[Node] = None
   var serverLog = new FrequencyBuffer[ActorRef](serverLogCapacity)
@@ -35,6 +35,11 @@ final class IoTDevice(
     case Tick => tick()
     case SetHeartbeatInterval(from, HeartbeatInterval(num, millis)) =>
       setHeartbeatInterval(from, num, millis)
+    case SubscribeDevices(subr) => {
+      arjun(s"Added subscriber $subr")
+      subr ! Manager(id.port, server)
+      subscribers.add(subr)
+    }
     case a => arjun(s"Unhandled message $a")
   }
 
@@ -46,6 +51,7 @@ final class IoTDevice(
   def newServer(node: Option[Node]): Unit = {
     server = node
     numIntervalsServerPOV = 0
+    subscribers.foreach(_ ! Manager(id.port ,server))
   }
 
   def fromNode(node: Node): ActorSelection = {
