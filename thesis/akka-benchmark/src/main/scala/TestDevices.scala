@@ -3,6 +3,7 @@ import akka.actor.{Actor, ActorRef, ActorSelection, ActorSystem, Props}
 import akka.cluster.Member
 import com.typesafe.config.ConfigFactory
 
+import java.lang.System.exit
 import scala.collection.mutable.{HashSet, TreeMap}
 import scala.collection.immutable.TreeSet
 import scala.collection.mutable.ArrayBuffer
@@ -43,19 +44,21 @@ class TestDevices extends Actor {
 
   def receive: Receive = {
     case Devices(port, charges, cluster_members, devices) => {
-      val server = servers(port)
-      server.charges = TreeSet.from(charges.map(_.anchorPath.address.port.get))
-      server.view = TreeSet.from(cluster_members.map(_.address.port.get))
-      server.devices = devices
-      println(s"$port CHARGES - ${server.charges}")
-      println(s"$port MEMBERS - ${server.view}")
-      check_convergence()
+      servers.get(port).foreach { server =>
+        server.charges = TreeSet.from(charges.map(_.anchorPath.address.port.get))
+        server.view = TreeSet.from(cluster_members.map(_.address.port.get))
+        server.devices = devices
+        println(s"$port CHARGES - ${server.charges}")
+        println(s"$port MEMBERS - ${server.view}")
+        check_convergence()
+      }
     }
     case Manager(port, manager) => {
-      val client = clients(port)
-      client.manager = manager.map(_.port)
-      println(s"$port MANAGER - ${client.manager}")
-      check_convergence()
+      clients.get(port).foreach { client =>
+        client.manager = manager.map(_.port)
+        println(s"$port MANAGER - ${client.manager}")
+        check_convergence()
+      }
     }
     case KillServer(port) =>{
       if (waiting.isDefined) {
@@ -97,6 +100,7 @@ class TestDevices extends Actor {
         queue.addOne(Done)
       } else {
         println("Done!")
+        exit(0)
       }
     }
     case a => arjun(s"Unhandled message $a")
@@ -192,7 +196,7 @@ class TestDevices extends Actor {
   def kill_client(port: Int) = {
     println(s"KILLING client on port $port");
     val client = clients.remove(port).get
-    Await.ready(client.node.terminate(), Duration.Inf)
+    Await.result(client.node.terminate(), Duration.Inf)
   }
 
   def kill_server(port: Int) = {
@@ -211,7 +215,7 @@ class TestDevices extends Actor {
     servers.foreach { case (port, svr) =>
       svr.charges.foreach { c =>
         val exclusive = clients_encountered.add(c)
-        val is_manager = clients(c).manager.contains(port)
+        val is_manager = clients.get(c).exists(_.manager.contains(port))
         if (!exclusive || !is_manager) {
           return false
         }
@@ -282,24 +286,24 @@ object RunDevicesTest extends App {
     SpawnServer(3003, Seq(3001)),
     WaitForConvergence(ClusterType),
     SpawnClient(4001, 300, Seq(3001)),
-//    SpawnClient(4002, 300, Seq(3001)),
-//    SpawnClient(4003, 300, Seq(3001)),
-//    SpawnClient(4004, 300, Seq(3001)),
-//    SpawnClient(4005, 300, Seq(3001)),
-//    SpawnClient(4006, 300, Seq(3001)),
-//    SpawnClient(4007, 300, Seq(3001)),
-//    SpawnClient(4008, 300, Seq(3001)),
-//    SpawnClient(4009, 300, Seq(3001)),
-//    SpawnClient(4010, 300, Seq(3001)),
-//    SpawnClient(4011, 300, Seq(3001)),
-//    SpawnClient(4012, 300, Seq(3001)),
+    SpawnClient(4002, 300, Seq(3001)),
+    SpawnClient(4003, 300, Seq(3001)),
+    SpawnClient(4004, 300, Seq(3001)),
+    SpawnClient(4005, 300, Seq(3001)),
+    SpawnClient(4006, 300, Seq(3001)),
+    SpawnClient(4007, 300, Seq(3001)),
+    SpawnClient(4008, 300, Seq(3001)),
+    SpawnClient(4009, 300, Seq(3001)),
+    SpawnClient(4010, 300, Seq(3001)),
+    SpawnClient(4011, 300, Seq(3001)),
+    SpawnClient(4012, 300, Seq(3001)),
     WaitForConvergence(DevicesType),
-//    KillClient(4003),
-//    KillClient(4004),
-//    WaitForConvergence(DevicesType),
-//    KillServer(3002),
-//    WaitForConvergence(ClusterType),
-//    WaitForConvergence(DevicesType),
+    KillClient(4003),
+    KillClient(4004),
+    WaitForConvergence(DevicesType),
+    KillServer(3002),
+    WaitForConvergence(ClusterType),
+    WaitForConvergence(DevicesType),
     Done,
   )
   val system = ActorSystem("Coordinator", config)
