@@ -1,4 +1,4 @@
-import akka.cluster.ddata.{DeltaReplicatedData, ReplicatedData, ReplicatedDelta}
+import akka.cluster.ddata.{DeltaReplicatedData, Key, ReplicatedData, ReplicatedDataSerialization, ReplicatedDelta}
 
 import scala.math.Ordering.Implicits.infixOrderingOps
 
@@ -18,9 +18,14 @@ case class DeviceEntry(removals: Long, hbi: Option[HeartbeatInterval]) extends O
   }
 }
 
-class DevicesCrdt(
-  val states: Map[Node, DeviceEntry],
-  val del: Option[DevicesCrdt] = None
+case class DevicesCrdtKey(_id: String) extends Key[DevicesCrdt](_id)
+
+object DevicesCrdt {
+  def empty = new DevicesCrdt(Map())
+}
+case class DevicesCrdt(
+  states: Map[Node, DeviceEntry],
+  del: Option[DevicesCrdt] = None
 ) extends DeltaReplicatedData with ReplicatedData with ReplicatedDelta {
   type D = DevicesCrdt
 

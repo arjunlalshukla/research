@@ -15,7 +15,7 @@ case class TestServer(
   var charges: TreeSet[Int],
   actor: ActorRef,
   var view: TreeSet[Int],
-  var devices: Map[ActorSelection, HeartbeatInterval]
+  var devices: DevicesCrdt
 )
 case class TestClient(node: ActorSystem, var manager: Option[Int], actor: ActorRef)
 
@@ -187,7 +187,7 @@ class TestDevices extends Actor {
 
     val system = ActorSystem(clusterName, config)
     val actor = system.actorOf(Props(new DataCenterMember(node)), "bench-member")
-    val svr = TestServer(system, TreeSet.empty, actor, TreeSet.empty, Map.empty)
+    val svr = TestServer(system, TreeSet.empty, actor, TreeSet.empty, DevicesCrdt.empty)
     actor ! SubscribeDevices(self_as)
     servers(port) = svr
     convergence += port

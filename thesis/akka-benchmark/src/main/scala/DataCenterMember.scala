@@ -15,11 +15,11 @@ final class DataCenterMember(val id: Node) extends Actor {
     DistributedData(context.system).selfUniqueAddress
 
   val cluster = Cluster(context.system)
-  val devicesKey = ORMapKey[ActorSelection, HeartbeatInterval]("devices")
+  val devicesKey = DevicesCrdtKey("devices")
   val capacity = 30
   val self_as = context.actorSelection(self.path)
 
-  var devices = Map.empty[ActorSelection, HeartbeatInterval]
+  var devices = DevicesCrdt.empty
   var heartbeatReqSenders = Map.empty[ActorSelection, ActorRef]
   var members = TreeSet.empty[Member]
   var servers = IndexedSeq(self_as)
@@ -32,8 +32,8 @@ final class DataCenterMember(val id: Node) extends Actor {
 
   def receive: Receive = {
     case SetHeartbeatInterval(from, hi) => setHeartbeatInterval(from, hi)
-    case c: Replicator.Changed[ORMap[ActorSelection, HeartbeatInterval]] =>
-      devicesUpdate(c.dataValue.entries)
+    case c: Replicator.Changed[DevicesCrdt] =>
+      devicesUpdate(c.dataValue)
     case RemoveDevice(device) => removeDevice(device)
     case RemoveHeartbeatReqSender(device, toTerminate) =>
       removeHeartbeatReqSender(device, toTerminate)
@@ -63,7 +63,7 @@ final class DataCenterMember(val id: Node) extends Actor {
 
   def serverString: String = servers.map('"' + _.toString + '"').mkString(",")
 
-  def devicesUpdate(newDevices: Map[ActorSelection, HeartbeatInterval]): Unit = {
+  def devicesUpdate(newDevices: DevicesCrdt): Unit = {
     arjun(s"Devices updated to $newDevices")
     devices = newDevices
     notify_subrs()
@@ -82,14 +82,11 @@ final class DataCenterMember(val id: Node) extends Actor {
     arjun(s"SetHeartbeatInterval received: $hi from $from")
     val manager = responsibility(toNode(from, id), servers)
     if (heartbeatReqSenders.contains(from) || manager == self_as) {
-      if (!devices.get(from).contains(hi)) {
-        replicator ! Update(
-          devicesKey,
-          ORMap.empty[ActorSelection, HeartbeatInterval],
-          WriteLocal
-        )(_ :+ from -> hi)
-        devicesUpdate(devices + (from -> hi))
-      }
+      replicator ! Update(
+        devicesKey,
+        DevicesCrdt.empty,
+        WriteLocal
+      )(_.put(toNode(from, id), hi.interval_millis))
       if (!heartbeatReqSenders.contains(from)) {
         val actor = context.actorOf(Props(
           new ReqHeartbeatSender(from, self, capacity, hi.interval_millis)
@@ -106,12 +103,11 @@ final class DataCenterMember(val id: Node) extends Actor {
     arjun(s"Device removed: $device")
     heartbeatReqSenders.get(device).foreach(_ ! PoisonPill)
     senderUpdated(heartbeatReqSenders - device)
-    devicesUpdate(devices - device)
     replicator ! Update(
       devicesKey,
-      ORMap.empty[ActorSelection, HeartbeatInterval],
+      DevicesCrdt.empty,
       WriteLocal
-    )(_.remove(device))
+    )(_.remove(toNode(device, id)))
   }
 
   def removeHeartbeatReqSender(device: ActorSelection, hbrs: ActorRef): Unit = {

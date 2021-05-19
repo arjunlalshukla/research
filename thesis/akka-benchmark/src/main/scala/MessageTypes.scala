@@ -48,7 +48,7 @@ case class SubscribeDevices(subscriber: ActorSelection)
 case class Manager(port: Int, node: Option[Node])
 
 // Message Types: Data Center Business
-case class Devices(port: Int, set: Set[ActorSelection], members: TreeSet[Member], devices: Map[ActorSelection, HeartbeatInterval])
+case class Devices(port: Int, set: Set[ActorSelection], members: TreeSet[Member], devices: DevicesCrdt)
 case class Increment(device: ActorSelection, amount: Long)
 
 // Message Types: Report Receiver
