@@ -32,6 +32,7 @@ case class WaitForConvergence(ct: ConvergenceType)
 case object Done
 
 class TestDevices extends Actor {
+  val start_time = System.nanoTime()
   implicit val logContext = ArjunContext("TestDevices")
   val self_as = context.actorSelection(self.path)
 
@@ -99,7 +100,8 @@ class TestDevices extends Actor {
       if (waiting.isDefined) {
         queue.addOne(Done)
       } else {
-        println("Done!")
+        val secs = (System.nanoTime() - start_time).toDouble / 1e9
+        println(s"Done! took seconds: $secs")
         exit(0)
       }
     }

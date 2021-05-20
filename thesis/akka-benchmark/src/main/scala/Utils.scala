@@ -49,14 +49,6 @@ object Utils {
     s"akka://$clusterName@${node.host}:${node.port}$localPath"
   }
 
-  def responsibility(device: Node, servers: IndexedSeq[ActorSelection], log: Boolean = true)
-    (implicit context: ArjunContext): ActorSelection = {
-    val hash = device.hashCode.abs
-    val as = servers(hash % servers.length)
-    arjun(s"Device $device  with hash $hash will be managed by $as", log)
-    as
-  }
-
   def toNode(as: ActorSelection, id: Node): Node = {
     as.anchorPath.address.host
       .zip(as.anchorPath.address.port)

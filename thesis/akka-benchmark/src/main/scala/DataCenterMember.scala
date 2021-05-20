@@ -1,4 +1,4 @@
-import Utils.{addressString, arjun, responsibility, toNode, unreliableSelection}
+import Utils.{addressString, arjun, toNode, unreliableSelection}
 import akka.actor.{Actor, ActorRef, ActorSelection, PoisonPill, Props}
 import akka.cluster.{Cluster, Member}
 import akka.cluster.ClusterEvent.{CurrentClusterState, MemberEvent, MemberRemoved, MemberUp, UnreachableMember}
@@ -22,7 +22,8 @@ final class DataCenterMember(val id: Node) extends Actor {
   var devices = DevicesCrdt.empty
   var heartbeatReqSenders = Map.empty[ActorSelection, ActorRef]
   var members = TreeSet.empty[Member]
-  var servers = IndexedSeq(self_as)
+  var ring = new NodeRing()
+  ring.insert(id)
   var subscribers = mutable.HashSet.empty[ActorSelection]
 
   cluster.registerOnMemberUp {
@@ -51,18 +52,6 @@ final class DataCenterMember(val id: Node) extends Actor {
 
   def selection(ref: ActorRef): ActorSelection = context.actorSelection(ref.path)
 
-  def updateServers(): Unit = {
-    servers = members.toIndexedSeq.map { member =>
-      val node = member.address.host
-        .zip(member.address.port)
-        .map(tup => Node(tup._1, tup._2))
-        .getOrElse(id)
-      context.actorSelection(addressString(node, "/user/bench-member"))
-    }
-  }
-
-  def serverString: String = servers.map('"' + _.toString + '"').mkString(",")
-
   def devicesUpdate(newDevices: DevicesCrdt): Unit = {
     arjun(s"Devices updated to $newDevices")
     devices = newDevices
@@ -80,7 +69,7 @@ final class DataCenterMember(val id: Node) extends Actor {
   // Message Reactions
   def setHeartbeatInterval(from: ActorSelection, hi: HeartbeatInterval): Unit = {
     arjun(s"SetHeartbeatInterval received: $hi from $from")
-    val manager = responsibility(toNode(from, id), servers)
+    val manager = fromNode(ring.responsibility(from))
     if (heartbeatReqSenders.contains(from) || manager == self_as) {
       replicator ! Update(
         devicesKey,
@@ -123,28 +112,34 @@ final class DataCenterMember(val id: Node) extends Actor {
 
   def removeMember(member: Member): Unit = {
     members -= member
-    updateServers()
+    ring.remove(Node(member.address.host.get, member.address.port.get))
     notify_subrs()
-    arjun(s"Member removed: $member; All servers: $serverString")
+    arjun(s"Member removed: $member;")
   }
 
   def addMember(member: Member): Unit = {
     members += member
-    updateServers()
+    ring.insert(Node(member.address.host.get, member.address.port.get))
     notify_subrs()
-    arjun(s"Member added: $member; All servers: $serverString")
+    arjun(s"Member added: $member;")
   }
 
   def newMembers(ccc: CurrentClusterState): Unit = {
     members = TreeSet.from(ccc._1)
-    updateServers()
-    arjun(s"Members updated to $serverString")
-    heartbeatReqSenders.values.foreach(_ ! UpdateServers(servers))
+    ring = new NodeRing()
+    ring.insert(id)
+    members.foreach { member =>
+      val host = member.address.host.get
+      val port = member.address.port.get
+      if (host != id.host || port != id.port) {
+        ring.insert(Node(host, port))
+      }
+    }
     notify_subrs()
   }
 
   def amISender(dest: ActorSelection, sender: ActorRef): Unit = {
-    val isManager = self_as == responsibility(toNode(dest, id), servers)
+    val isManager = self_as == fromNode(ring.responsibility(dest))
     val isSender = heartbeatReqSenders.get(dest).contains(sender)
     if (!isManager || !isSender) {
       arjun(s"Killing not-sender for $dest that is $sender")
@@ -152,5 +147,9 @@ final class DataCenterMember(val id: Node) extends Actor {
     } else {
       arjun(s"Keeping sender for $dest that is $sender")
     }
+  }
+
+  def fromNode(node: Node): ActorSelection = {
+    context.actorSelection(addressString(node, "/user/bench-member"))
   }
 }
