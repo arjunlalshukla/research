@@ -5,7 +5,8 @@ import com.typesafe.config.ConfigFactory
 import java.io.File
 import scala.concurrent.duration.DurationInt
 
-object PeriodicKiller extends App {
+object PeriodicKiller {
+  val args = Array("")
   implicit val logContext = ArjunContext("PeriodicKiller")
   var iter = args.iterator
   val host = "127.0.0.1"

@@ -1,13 +1,16 @@
-import Utils.{arjun, toNode, unreliableSelection}
+import Utils.{addressString, arjun, toNode, unreliableSelection}
 import akka.actor.{Actor, ActorRef, ActorSelection}
 
+import java.io.File
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import scala.collection.mutable
 import scala.concurrent.duration.DurationInt
 
 final class Collector(
-  nodes: Set[ActorSelection],
+  val svrs: Seq[Node],
+  val clis: Seq[Node],
+  val jar: String,
   val id: Node,
   val displayInterval: Int,
   val reqReportInterval: Int,
@@ -20,55 +23,54 @@ final class Collector(
   // because the totals are not monotonic. They are kept in memory and are reset
   // to 0 if the node crashes. The failure transparency of actor selections
   // works against us here.
-  var totals = Map.empty[(ActorRef, ActorSelection), Long].withDefaultValue(0L)
-  val numReports = mutable.Map.empty.concat(nodes.map(_ -> 0L))
-  val tickDelay = 2*Utils.max_delay
-  val factor = 1.to(1000).sum
+  val servers = svrs.map { node =>
+    context.actorSelection(addressString(node, "user/bench-business"))
+  }
+  val clients = clis.map { node =>
+    context.actorSelection(addressString(node, "user/bench-business"))
+  }
+  svrs.foreach(ssh_cmd(true, _))
+  clis.foreach(ssh_cmd(false, _))
+  var totals = mutable.Map.empty[ActorSelection, Map[ActorSelection, Long]].withDefaultValue(Map.empty)
   val started = LocalDateTime.now()
+  var lastPrint = 0L
 
-  private[this] case class Tick(dest: ActorSelection, seqNum: Long)
   private[this] case object Display
 
-  nodes.foreach(self ! Tick(_, 0L))
+  self ! Tick
   self ! Display
+
+  def ssh_cmd(is_svr: Boolean, node: Node) = {
+    val dir = System.getProperty("user.dir")
+    val f = if (is_svr) "server 200" else "client"
+    val server_list = svrs.map(node => s" ${node.host} ${node.port + 1} ").mkString(" ")
+    val cmd = Array("ssh", node.host, s"""
+      |cd $dir;
+      |java -cp $jar Main ${node.host} ${node.port} killer $jar ${node.host} ${node.port} $f $server_list
+      |""".stripMargin.replaceAll("\n", " "))
+    val pb = new ProcessBuilder(cmd :_*)
+    pb.start()
+  }
 
   def receive: Receive = {
     case DCReport(from, toAdd) => {
-      val from_as = context.actorSelection(from.path)
-      numReports(from_as) += 1L
-      totals = totals ++ toAdd.map(tup => (from -> tup._1) -> tup._2)
-      context.system.scheduler.scheduleOnce(reqReportInterval.millis) {
-        arjun("Sending request for report number " +
-          s"${numReports(from_as) + 1L} for $from_as", logNonTotal)
-        unreliableSelection(from_as, ReqReport(self), log = logNonTotal)
-      }
-      context.system.scheduler.scheduleOnce(
-        (tickDelay + reqReportInterval).millis,
-        self, Tick(from_as, numReports(from_as))
-      )
+      totals.put(from, toAdd)
     }
-    case Tick(dest, seqNum) =>  {
-      if (seqNum == numReports(dest)) {
-        arjun(s"Resending ReqReport ${numReports(dest)} to $dest", logNonTotal)
-        unreliableSelection(dest, ReqReport(self), log = logNonTotal)
-        context.system.scheduler.scheduleOnce(
-          (tickDelay + reqReportInterval).millis,
-          self, Tick(dest, seqNum)
-        )
-      }
+    case Tick =>  {
+      servers.foreach(_ ! ReqReport(self))
+      context.system.scheduler
+        .scheduleOnce(displayInterval.millis, self, Tick)
     }
     case Display => {
-      val serverDevice = totals
-        .groupBy(tup => (context.actorSelection(tup._1._1.path), tup._1._2))
-        .map { case (sd, total) => (sd, total.values.sum/factor)}
-      val sd = serverDevice
-        .map(tup => (toNode(tup._1._1, id), toNode(tup._1._2, id), tup._2))
-        .map { case (server, device, total) => s"$server <-> $device = $total" }
-        .toSeq.sorted
+      var total = 0L
+      totals.foreach { member =>
+        member._2.foreach(total += _._2)
+      }
       val elapsed = ChronoUnit.MILLIS.between(started, LocalDateTime.now())
-      arjun(s"Total: ${serverDevice.values.sum}; Time: $elapsed ms; "
-        // + s"Subtotals: \n${sd.mkString("\n")}"
-      )
+      val all = totals.map(_._2.values.sum).sum
+      val since = all - lastPrint
+      println(s"Elapsed: $elapsed; Since Last: $since")
+      lastPrint = all
       context.system.scheduler
         .scheduleOnce(displayInterval.millis, self, Display)
     }

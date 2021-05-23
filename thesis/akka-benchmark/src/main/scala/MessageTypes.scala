@@ -57,4 +57,4 @@ case class Increment(device: ActorSelection, amount: Long, sent: Long, recvd: Lo
 case class IoTReport(data: Seq[Long]) extends MyCbor
 
 // Message Types: Collector
-case class DCReport(from: ActorRef, totals: Map[ActorSelection, Long]) extends MyCbor
+case class DCReport(from: ActorSelection, totals: Map[ActorSelection, Long]) extends MyCbor

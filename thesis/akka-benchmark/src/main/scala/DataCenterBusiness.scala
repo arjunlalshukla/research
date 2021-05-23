@@ -15,14 +15,14 @@ final class DataCenterBusiness(
 
   var devices = Map.empty[ActorSelection, ActorRef]
   var totals = Map.empty[ActorSelection, Long].withDefaultValue(0L)
-
+  var x = 0L
   dcMember ! SubscribeDevices(self_as)
 
   private case object Print
 
-  context.system.scheduler.scheduleOnce(
-    1000.millis, self, Print
-  )
+//  context.system.scheduler.scheduleOnce(
+//    1000.millis, self, Print
+//  )
 
   def receive: Receive = {
     case Devices(_, set, _, _) => {
@@ -41,10 +41,11 @@ final class DataCenterBusiness(
       devices = devices -- removed ++ added
     }
     case Increment(device, amount, sent, recvd) =>
+      x += amount
       totals += device -> recvd
-    case ReqReport(replyTo) => replyTo ! DCReport(self, totals)
+    case ReqReport(replyTo) => replyTo ! DCReport(self_as, totals)
     case Print => {
-      arjun(s"$totals")
+      arjun(s"$totals, $x")
       context.system.scheduler.scheduleOnce(
         1000.millis, self, Print
       )
