@@ -26,9 +26,16 @@ object DataCenterMain extends App {
         provider = cluster
         allow-java-serialization = on
         warn-about-java-serializer-usage = off
+        #serializers {
+        #  jackson-cbor = "akka.serialization.jackson.JacksonCborSerializer"
+        #}
+        #serialization-bindings {
+        #  "MyCbor" = jackson-cbor
+        #}
       }
       remote {
         artery {
+          #transport = aeron-udp
           canonical.hostname = $host
           canonical.port = $akkaPort
         }

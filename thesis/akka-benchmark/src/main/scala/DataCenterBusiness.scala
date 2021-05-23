@@ -1,12 +1,15 @@
 import Utils.{addressString, arjun, toNode}
 import akka.actor.{Actor, ActorRef, ActorSelection, PoisonPill, Props}
 
+import scala.concurrent.duration.DurationInt
+
 final class DataCenterBusiness(
   val dcMember: ActorRef,
   val id: Node,
   val reqReportInterval: Int
 ) extends Actor {
   implicit val logContext = ArjunContext("DataCenterBusiness")
+  import context.dispatcher
   arjun(s"My path is ${context.self.path.toString}")
   val self_as = context.actorSelection(self.path)
 
@@ -15,9 +18,11 @@ final class DataCenterBusiness(
 
   dcMember ! SubscribeDevices(self_as)
 
-  def update(ioTReport: IoTReport, from: ActorSelection): Increment = {
-    Increment(from, ioTReport.data.sum)
-  }
+  private case object Print
+
+  context.system.scheduler.scheduleOnce(
+    1000.millis, self, Print
+  )
 
   def receive: Receive = {
     case Devices(_, set, _, _) => {
@@ -35,9 +40,15 @@ final class DataCenterBusiness(
       }
       devices = devices -- removed ++ added
     }
-    case Increment(device, amount) =>
-      totals += device -> (totals(device) + amount)
+    case Increment(device, amount, sent, recvd) =>
+      totals += device -> recvd
     case ReqReport(replyTo) => replyTo ! DCReport(self, totals)
+    case Print => {
+      arjun(s"$totals")
+      context.system.scheduler.scheduleOnce(
+        1000.millis, self, Print
+      )
+    }
     case a => arjun(s"Unhandled message $a")
   }
 }

@@ -38,6 +38,7 @@ object IoTMain extends App {
       }
       remote {
         artery {
+          #transport = aeron-udp
           canonical.hostname = $host
           canonical.port = $port
         }

@@ -8,7 +8,7 @@ final class IoTBusiness(val id: Node, val hbr: ActorRef) extends Actor {
   def receive: Receive = {
     case ReqReport(replyTo) => {
       reports += 1L
-      arjun(s"Reports processed: $reports")
+      //arjun(s"Reports processed: $reports")
       unreliableRef(replyTo, IoTReport(1L.to(1000).toArray.toSeq),
         toPrint = Option("one thousand longs"))
     }
