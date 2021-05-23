@@ -6,11 +6,11 @@ import scala.concurrent.duration.DurationInt
 
 object IoTMain extends App {
   implicit  val loginContext = ArjunContext("DataCenterMain")
-  val requiredArgs = 5
+  val requiredArgs = 6
   if (args.length % 2 != requiredArgs % 2 || args.length < requiredArgs) {
     println(s"Your arguments are: ${args.map('"'+_+'"').mkString(",")}")
     println(
-      "usage: IoTMain <iot_port> <interval> <change_interval_interval> " +
+      "usage: IoTMain <host> <iot_port> <interval> <change_interval_interval> " +
       "<host_1> <port_1> [... <host_n> <port_n>]"
     )
     sys.exit(0)
@@ -20,11 +20,11 @@ object IoTMain extends App {
     var interval = Int.MaxValue
   }
 
-  val host = "127.0.0.1"
-  val port = args(0).toInt
-  val interval = args(1).toInt
+  val host = args(0)
+  val port = args(1).toInt
+  val interval = args(2).toInt
   IntervalHolder.interval = interval
-  val changeIntervalInterval = args(2).toInt.millis
+  val changeIntervalInterval = args(3).toInt.millis
   val seeds = args.drop(requiredArgs-2).sliding(2,2).toSeq
     .map(seq => Node(seq(0), seq(1).toInt))
 
@@ -38,7 +38,7 @@ object IoTMain extends App {
       }
       remote {
         artery {
-          #transport = aeron-udp
+          transport = aeron-udp
           canonical.hostname = $host
           canonical.port = $port
         }

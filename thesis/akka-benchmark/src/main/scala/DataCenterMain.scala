@@ -4,15 +4,15 @@ import com.typesafe.config.ConfigFactory
 
 object DataCenterMain extends App {
   implicit  val loginContext = ArjunContext("DataCenterMain")
-  val requiredArgs = 2
+  val requiredArgs = 3
   if (args.length % 2 != requiredArgs % 2 || args.length < requiredArgs) {
     arjun(args.map('"'+_+'"').mkString(","))
     throw new IllegalArgumentException
   }
 
-  val host = "127.0.0.1"
-  val akkaPort = args(0).toInt
-  val reqInt = args(1).toInt
+  val host = args(0)
+  val akkaPort = args(1).toInt
+  val reqInt = args(2).toInt
 
   val node = Node(host, akkaPort)
   val seeds = args.drop(requiredArgs).sliding(2,2).toSeq match {
@@ -35,7 +35,7 @@ object DataCenterMain extends App {
       }
       remote {
         artery {
-          #transport = aeron-udp
+          transport = aeron-udp
           canonical.hostname = $host
           canonical.port = $akkaPort
         }
