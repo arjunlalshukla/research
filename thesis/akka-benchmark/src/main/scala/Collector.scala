@@ -24,10 +24,16 @@ final class Collector(
   // to 0 if the node crashes. The failure transparency of actor selections
   // works against us here.
   val servers = svrs.map { node =>
-    context.actorSelection(addressString(node, "user/bench-business"))
+    val n = Node(node.host, node.port + 1)
+    val s = context.actorSelection(addressString(n, "/user/bench-business"))
+    println(s"Has server: $s")
+    s
   }
   val clients = clis.map { node =>
-    context.actorSelection(addressString(node, "user/bench-business"))
+    val n = Node(node.host, node.port + 1)
+    val s = context.actorSelection(addressString(n, "/user/IoT-business"))
+    println(s"Has client: $s")
+    s
   }
   svrs.foreach(ssh_cmd(true, _))
   clis.foreach(ssh_cmd(false, _))
@@ -42,13 +48,15 @@ final class Collector(
 
   def ssh_cmd(is_svr: Boolean, node: Node) = {
     val dir = System.getProperty("user.dir")
-    val f = if (is_svr) "server 200" else "client"
+    val f = if (is_svr) "server 200" else "client 1000"
     val server_list = svrs.map(node => s" ${node.host} ${node.port + 1} ").mkString(" ")
     val cmd = Array("ssh", node.host, s"""
       |cd $dir;
-      |java -cp $jar Main ${node.host} ${node.port} killer $jar ${node.host} ${node.port} $f $server_list
+      |java -cp $jar Main ${node.host} ${node.port} killer $jar ${node.host} ${node.port + 1} $f $server_list
       |""".stripMargin.replaceAll("\n", " "))
+    println(s"running command ${cmd.map('"'+_+'"').mkString(" ")}")
     val pb = new ProcessBuilder(cmd :_*)
+    pb.inheritIO()
     pb.start()
   }
 

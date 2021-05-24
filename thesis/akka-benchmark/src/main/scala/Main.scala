@@ -92,6 +92,7 @@ object Main {
     val cmd = Array("java", "-cp", jar, "Main").appendedAll(args)
     val pb = new ProcessBuilder(cmd :_*)
     val logFile = new File(s"./log/${node.host}-${node.port}.log")
+    logFile.createNewFile()
     pb.redirectError(logFile)
     pb.redirectOutput(logFile)
     pb.start().waitFor()
@@ -107,6 +108,7 @@ object Main {
         }
         remote {
           artery {
+            transport = aeron-udp
             canonical.hostname = ${node.host}
             canonical.port = ${node.port}
           }
@@ -130,7 +132,7 @@ object Main {
       }
     }
 
-    val system = ActorSystem("Collector", config)
+    val system = ActorSystem(clusterName, config)
     system.actorOf(Props(
       new Collector(servers.toSeq, clients.toSeq, jar, node, dispInt, reqInt, true)), "collector")
   }
