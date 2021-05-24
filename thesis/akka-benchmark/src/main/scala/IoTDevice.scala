@@ -121,8 +121,9 @@ final class IoTDevice(
   }
 
   def tick(): Unit = {
-    arjun("Received Tick")
-    if (heartbeatReqs.phi > phi_threshold) {
+    val phi = heartbeatReqs.phi  
+    arjun(s"Received Tick phi: $phi, thresh: $phi_threshold")
+    if (phi > phi_threshold) {
       arjun(s"No ReqHeartbeats received for a while. Assuming the server is down")
       arjun(heartbeatReqs.summary)
       newServer(None)

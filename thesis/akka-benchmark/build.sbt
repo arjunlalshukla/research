@@ -19,3 +19,9 @@ assemblyJarName in assembly := "akka-benchmark.jar"
 //  case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
 //  case x => MergeStrategy.first
 //}
+assemblyMergeStrategy in assembly := {
+  case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+  case x =>         
+    val oldStrategy = (assemblyMergeStrategy in assembly).value
+    oldStrategy(x)
+}

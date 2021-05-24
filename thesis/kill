@@ -2,4 +2,5 @@ for f in $(awk '{print $2}' $1 | uniq)
 do
   echo "Killing procs on $f"
   ssh $f "ps -augx | grep ./target/release/device_main ; pkill -f ./target/release/device_main"
+  ssh $f "ps -augx | grep java ; pkill java"
 done

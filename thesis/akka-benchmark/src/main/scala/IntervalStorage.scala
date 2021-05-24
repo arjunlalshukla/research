@@ -37,7 +37,14 @@ final class IntervalStorage(var capacity: Int, initial_fill: Long)(implicit logC
 
   def mean: Double = sum.toDouble/intervals.length
 
-  def stdev: Double = sqrt(sumSquares/intervals.length - mean*mean)
+  def stdev: Double = {
+    val s = sqrt(sumSquares.toDouble/intervals.length.toDouble - (mean*mean).toDouble)
+    if (s == 0.0) {
+      Float.MinPositiveValue.toDouble
+    } else {
+      s
+    }
+  }
 
   def summary: String =
     s"phi = $phi; since latest = ${millis_since_latest()}; mean = $mean; " +
