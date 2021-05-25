@@ -11,7 +11,7 @@ object Utils {
   val props = System.getProperties.asScala
   val logCxt = ArjunContext("Utils")
   val loggingOn = props.getOrElse("LOGGING_ON", "true").toBoolean
-  val append = props.getOrElse("APPEND_LOG", "true").toBoolean
+  val append = props.getOrElse("APPEND_LOG", "false").toBoolean
   val logger = props.get("BENCH_LOG_FILE")
     .map(str => new PrintWriter(new FileWriter(str, append)))
     .getOrElse(new PrintWriter(System.out))

@@ -129,6 +129,8 @@ object Main {
           clients += Node(line(1), line(2).toInt)
         case "server" =>
           servers += Node(line(1), line(2).toInt)
+        case _ if line(0).charAt(0) == '#' =>
+          println(s"Skipping $line")
       }
     }
 
