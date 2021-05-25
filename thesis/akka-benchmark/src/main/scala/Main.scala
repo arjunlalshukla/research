@@ -89,13 +89,17 @@ object Main {
 
   def killer(args: Iterator[String], node: Node) = {
     val jar = args.next()
-    val cmd = Array("java", "-cp", jar, "Main").appendedAll(args)
-    val pb = new ProcessBuilder(cmd :_*)
-    val logFile = new File(s"./log/${node.host}-${node.port}.log")
-    logFile.createNewFile()
-    pb.redirectError(logFile)
-    pb.redirectOutput(logFile)
-    pb.start().waitFor()
+    val num_procs = args.next().toInt
+    val argsArray = args.toArray
+    (node.port + 1).to(node.port + num_procs).foreach { port =>
+      val cmd = Array("java", "-cp", jar, "Main", node.host, s"$port").appendedAll(argsArray)
+      val pb = new ProcessBuilder(cmd :_*)
+      val logFile = new File(s"./log/${node.host}-${node.port}.log")
+      logFile.createNewFile()
+      pb.redirectError(logFile)
+      pb.redirectOutput(logFile)
+      pb.start().waitFor()
+    }
   }
 
   def collector(args: Iterator[String], node: Node) = {
@@ -119,8 +123,9 @@ object Main {
     val file = Source.fromFile(args.next())
     val lines = file.getLines()
     val first = lines.next().split("\\s+")
-    val dispInt = first(0).toInt
-    val reqInt = first(1).toInt
+    val clientsPerNode = first(0).toInt
+    val dispInt = first(1).toInt
+    val reqInt = first(2).toInt
     var servers = ArrayBuffer[Node]()
     var clients = ArrayBuffer[Node]()
     lines.map(_.split("\\s+")).foreach { line =>
@@ -136,6 +141,6 @@ object Main {
 
     val system = ActorSystem(clusterName, config)
     system.actorOf(Props(
-      new Collector(servers.toSeq, clients.toSeq, jar, node, dispInt, reqInt, true)), "collector")
+      new Collector(servers.toSeq, clients.toSeq, jar, node, dispInt, reqInt, true, clientsPerNode)), "collector")
   }
 }

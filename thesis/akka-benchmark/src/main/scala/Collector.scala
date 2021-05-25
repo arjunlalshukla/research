@@ -14,7 +14,8 @@ final class Collector(
   val id: Node,
   val displayInterval: Int,
   val reqReportInterval: Int,
-  val logNonTotal: Boolean
+  val logNonTotal: Boolean,
+  val clientsPerNode: Int
 ) extends Actor {
   implicit val logContext = ArjunContext("Collector")
   arjun(s"My path is ${context.self.path.toString}")
@@ -48,11 +49,11 @@ final class Collector(
 
   def ssh_cmd(is_svr: Boolean, node: Node) = {
     val dir = System.getProperty("user.dir")
-    val f = if (is_svr) "server 200" else "client 1000"
+    val f = if (is_svr) "1 server 200" else s"$clientsPerNode client 1000"
     val server_list = svrs.map(node => s" ${node.host} ${node.port + 1} ").mkString(" ")
     val cmd = Array("ssh", node.host, s"""
       |cd $dir;
-      |java -cp $jar Main ${node.host} ${node.port} killer $jar ${node.host} ${node.port + 1} $f $server_list
+      |java -cp $jar Main ${node.host} ${node.port} killer $jar $f $server_list
       |""".stripMargin.replaceAll("\n", " "))
     println(s"running command ${cmd.map('"'+_+'"').mkString(" ")}")
     val pb = new ProcessBuilder(cmd :_*)

@@ -1,4 +1,4 @@
-1000 300
+2 1000 300
 server onyxnode01 3000
 server onyxnode03 3000
 server onyxnode05 3000
