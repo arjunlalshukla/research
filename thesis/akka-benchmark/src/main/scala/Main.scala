@@ -126,6 +126,9 @@ object Main {
     val file = Source.fromFile(args.next())
     val lines = file.getLines()
     val first = lines.next().split("\\s+")
+    // skip the next 2 lines, PeriodicKiller not fully supported yet
+    lines.next()
+    lines.next()
     val clientsPerNode = first(0).toInt
     val dispInt = first(1).toInt
     val reqInt = first(2).toInt
