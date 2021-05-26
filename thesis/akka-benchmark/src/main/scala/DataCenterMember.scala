@@ -3,7 +3,9 @@ import akka.actor.{Actor, ActorRef, ActorSelection, PoisonPill, Props}
 import akka.cluster.{Cluster, Member}
 import akka.cluster.ClusterEvent.{CurrentClusterState, MemberEvent, MemberRemoved, MemberUp, UnreachableMember}
 import akka.cluster.ddata.{DistributedData, ORMap, ORMapKey, Replicator, SelfUniqueAddress}
-import akka.cluster.ddata.Replicator.{Update, WriteLocal}
+import akka.cluster.ddata.Replicator.{Update, WriteAll}
+import scala.concurrent.duration
+import scala.concurrent.duration.FiniteDuration
 import scala.collection.mutable
 import scala.collection.immutable.TreeSet
 
@@ -74,7 +76,7 @@ final class DataCenterMember(val id: Node) extends Actor {
       replicator ! Update(
         devicesKey,
         DevicesCrdt.empty,
-        WriteLocal
+        WriteAll(FiniteDuration(1000000, duration.SECONDS))
       )(_.put(toNode(from, id), hi.interval_millis))
       if (!heartbeatReqSenders.contains(from)) {
         val actor = context.actorOf(Props(
@@ -95,7 +97,7 @@ final class DataCenterMember(val id: Node) extends Actor {
     replicator ! Update(
       devicesKey,
       DevicesCrdt.empty,
-      WriteLocal
+      WriteAll(FiniteDuration(1000000, duration.SECONDS))
     )(_.remove(toNode(device, id)))
   }
 

@@ -90,16 +90,19 @@ object Main {
   def killer(args: Iterator[String], node: Node) = {
     val jar = args.next()
     val num_procs = args.next().toInt
+    //println(s"$node num procs: $num_procs; ${(node.port + 1).to(node.port + num_procs)}")
     val argsArray = args.toArray
-    (node.port + 1).to(node.port + num_procs).foreach { port =>
+    val procs = (node.port + 1).to(node.port + num_procs).map { port =>
+      println(s"$node starting child $port")
       val cmd = Array("java", "-cp", jar, "Main", node.host, s"$port").appendedAll(argsArray)
       val pb = new ProcessBuilder(cmd :_*)
-      val logFile = new File(s"./log/${node.host}-${node.port}.log")
+      val logFile = new File(s"./log/${node.host}-$port.log")
       logFile.createNewFile()
       pb.redirectError(logFile)
       pb.redirectOutput(logFile)
-      pb.start().waitFor()
+      pb.start()
     }
+    procs.foreach(_.waitFor())
   }
 
   def collector(args: Iterator[String], node: Node) = {

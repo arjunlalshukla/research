@@ -1,7 +1,9 @@
-2 1000 300
+1 1000 300
+1000000 1000000 1000000 1000000
+3000 6000 5000 7000
 server onyxnode01 3000
 server onyxnode03 3000
 server onyxnode05 3000
-client onyxnode29 3010
-client onyxnode36 3002
-client onyxnode46 3000
+client onyxnode29 4010
+client onyxnode36 4002
+client onyxnode46 4000
