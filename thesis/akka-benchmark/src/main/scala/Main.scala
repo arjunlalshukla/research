@@ -42,7 +42,7 @@ object Main {
         }
         remote {
           artery {
-            transport = aeron-udp
+            #transport = aeron-udp
             canonical.hostname = ${node.host}
             canonical.port = ${node.port}
           }
@@ -73,7 +73,7 @@ object Main {
         }
         remote {
           artery {
-            transport = aeron-udp
+            #transport = aeron-udp
             canonical.hostname = ${node.host}
             canonical.port = ${node.port}
           }
@@ -115,7 +115,7 @@ object Main {
         }
         remote {
           artery {
-            transport = aeron-udp
+            #transport = aeron-udp
             canonical.hostname = ${node.host}
             canonical.port = ${node.port}
           }

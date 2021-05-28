@@ -43,7 +43,7 @@ final class DataCenterBusiness(
     case Increment(device, amount, sent, recvd) =>
       x += amount
       totals += device -> recvd
-    case ReqReport(replyTo) => replyTo ! DCReport(self_as, totals)
+    case ReqReport(replyTo) => replyTo ! DCReport(self_as, totals, devices.size)
     case Print => {
       arjun(s"$totals, $x")
       context.system.scheduler.scheduleOnce(

@@ -1,12 +1,6 @@
-5 1000 250
+12 1000 250
 1000000 1000000 0 0
 1000000 1000000 0 0 
-client onyxnode01 3000
-client onyxnode03 3000
-client onyxnode05 3000
-client onyxnode06 3000
-client onyxnode08 3000
-client onyxnode14 3000
 client onyxnode15 3000
 client onyxnode18 3000
 client onyxnode29 3000

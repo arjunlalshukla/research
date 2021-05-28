@@ -38,7 +38,7 @@ final class Collector(
   }
   svrs.foreach(ssh_cmd(true, _))
   clis.foreach(ssh_cmd(false, _))
-  var totals = mutable.Map.empty[ActorSelection, Map[ActorSelection, Long]].withDefaultValue(Map.empty)
+  var totals = mutable.Map.empty[ActorSelection, (Int, Map[ActorSelection, Long])].withDefaultValue((0, Map.empty))
   val started = LocalDateTime.now()
   var lastPrint = 0L
 
@@ -62,8 +62,8 @@ final class Collector(
   }
 
   def receive: Receive = {
-    case DCReport(from, toAdd) => {
-      totals.put(from, toAdd)
+    case DCReport(from, toAdd, numNodes) => {
+      totals.put(from, (numNodes, toAdd))
     }
     case Tick =>  {
       servers.foreach(_ ! ReqReport(self))
@@ -73,12 +73,13 @@ final class Collector(
     case Display => {
       var total = 0L
       totals.foreach { member =>
-        member._2.foreach(total += _._2)
+        member._2._2.foreach(total += _._2)
       }
       val elapsed = ChronoUnit.MILLIS.between(started, LocalDateTime.now())
-      val all = totals.map(_._2.values.sum).sum
+      val all = totals.map(_._2._2.values.sum).sum
+      val num_nodes = totals.map(x => s"  ${toNode(x._1, id)} -> ${x._2._1}").mkString("\n")
       val since = all - lastPrint
-      println(s"Elapsed: $elapsed; Since Last: $since")
+      println(s"Elapsed: $elapsed; Since Last: $since\n$num_nodes")
       lastPrint = all
       context.system.scheduler
         .scheduleOnce(displayInterval.millis, self, Display)

@@ -4,15 +4,15 @@ class NodeRing {
   private val ring = TreeMap.empty[Int, Node]
 
   def insert(node: Node): Unit = {
-    ring.put(node.hashCode, node)
+    ring.put(node.##, node)
   }
 
   def remove(node: Node): Unit = {
-    ring.remove(node.hashCode)
+    ring.remove(node.##)
   }
 
-  def responsibility(o: Object): Node = {
-    val hash = o.hashCode()
+  def responsibility(node: Node): Node = {
+    val hash = node.##
     val rng = ring.rangeFrom(hash)
     if (rng.isEmpty) {
       ring.head._2

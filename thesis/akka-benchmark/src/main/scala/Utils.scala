@@ -4,6 +4,8 @@ import java.io.{File, FileWriter, PrintWriter}
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 import scala.util.Try
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 
 object Utils {
   val clusterName = "AkkaBenchCluster"
@@ -15,6 +17,8 @@ object Utils {
   val logger = props.get("BENCH_LOG_FILE")
     .map(str => new PrintWriter(new FileWriter(str, append)))
     .getOrElse(new PrintWriter(System.out))
+  
+  val started = LocalDateTime.now()
 
   val min_delay = props.getOrElse("MIN_DELAY", "0").toIntOption
     .filter(_ >= 0).get
@@ -36,7 +40,8 @@ object Utils {
 
   def arjun(s: Any, toPrint: Boolean = true)(implicit context: ArjunContext): Unit = {
     if (toPrint && loggingOn) {
-      logger.println(s"[     arjun     ][${context.s}] ${s.toString}")
+      val elapsed = ChronoUnit.MILLIS.between(started, LocalDateTime.now()).toDouble / 1000.0
+      logger.println(s"[     arjun     ][${context.s}][$elapsed] ${s.toString}")
       logger.flush()
     }
   }
