@@ -16,6 +16,8 @@ final class Collector(
   val reqReportInterval: Int,
   val logNonTotal: Boolean,
   val clientsPerNode: Int,
+  val fail_prob: Double,
+  val req_report_timeout: Int,
   val server_min_kill: Int,
   val server_max_kill: Int,
   val server_min_restart: Int,
@@ -46,9 +48,10 @@ final class Collector(
   }
   svrs.foreach(ssh_cmd(true, _))
   clis.foreach(ssh_cmd(false, _))
-  var totals = mutable.Map.empty[ActorSelection, (Int, Map[ActorSelection, Long])].withDefaultValue((0, Map.empty))
+  var totals = mutable.Map.empty[ActorSelection, (Long, Int, Map[ActorSelection, Long])]
   val started = LocalDateTime.now()
   var lastPrint = 0L
+  var dead_totals = 0L
 
   private[this] case object Display
 
@@ -58,13 +61,13 @@ final class Collector(
   def ssh_cmd(is_svr: Boolean, node: Node) = {
     val dir = System.getProperty("user.dir")
     val f = if (is_svr) 
-      s"1 $server_min_kill $server_max_kill $server_min_restart $server_max_restart server 200" 
+      s"1 $server_min_kill $server_max_kill $server_min_restart $server_max_restart server $req_report_timeout" 
     else 
       s"$clientsPerNode $client_min_kill $client_max_kill $client_min_restart $client_max_restart client 1000"
     val server_list = svrs.map(node => s" ${node.host} ${node.port + 1} ").mkString(" ")
     val cmd = Array("ssh", node.host, s"""
       |cd $dir;
-      |java -cp $jar Main ${node.host} ${node.port} killer $jar $f $server_list
+      |java -cp $jar -DFAIL_PROB=$fail_prob Main ${node.host} ${node.port} killer $jar $f $server_list
       |""".stripMargin.replaceAll("\n", " "))
     println(s"running command ${cmd.map('"'+_+'"').mkString(" ")}")
     val pb = new ProcessBuilder(cmd :_*)
@@ -73,8 +76,14 @@ final class Collector(
   }
 
   def receive: Receive = {
-    case DCReport(from, toAdd, numNodes) => {
-      totals.put(from, (numNodes, toAdd))
+    case DCReport(from, toAdd, numNodes, random) => {
+      if (totals.contains(from)) {
+        val (prev_random, _, prev_total) = totals.remove(from).get
+        if (prev_random != random) {
+          dead_totals += prev_total.values.sum
+        }
+      }
+      totals.put(from, (random, numNodes, toAdd))
     }
     case Tick =>  {
       servers.foreach(_ ! ReqReport(self))
@@ -84,10 +93,10 @@ final class Collector(
     case Display => {
       var total = 0L
       totals.foreach { member =>
-        member._2._2.foreach(total += _._2)
+        member._2._3.foreach(total += _._2)
       }
       val elapsed = ChronoUnit.MILLIS.between(started, LocalDateTime.now())
-      val all = totals.map(_._2._2.values.sum).sum
+      val all = totals.map(_._2._3.values.sum).sum + dead_totals
       val num_nodes = totals.map(x => s"  ${toNode(x._1, id)} -> ${x._2._1}").mkString("\n")
       val since = all - lastPrint
       val rate = all.toDouble / (elapsed.toDouble / 1000)

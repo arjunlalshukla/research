@@ -20,6 +20,8 @@ object Utils {
   
   val started = LocalDateTime.now()
 
+  var exceptions = Set.empty[Node]
+
   val min_delay = props.getOrElse("MIN_DELAY", "0").toIntOption
     .filter(_ >= 0).get
   arjun(s"Default min delay is $min_delay")(logCxt)
@@ -61,6 +63,13 @@ object Utils {
       .getOrElse(id)
   }
 
+  def toNode(ref: ActorRef, id: Node): Node = {
+    ref.path.address.host
+      .zip(ref.path.address.port)
+      .map(tup => Node(tup._1, tup._2))
+      .getOrElse(id)
+  }
+
   def unreliableRef(
     ref: ActorRef,
     msg: Any,
@@ -71,15 +80,16 @@ object Utils {
     log: Boolean = true
   )(implicit context: ActorContext, logContext: ArjunContext): Unit = {
     val p = toPrint.getOrElse(msg.toString)
-    if (min_delay == 0 && max_delay == 0 && fail_prob == 0) {
+    val node = toNode(ref, Node("", 0))
+    if (exceptions(node) || min_delay == 0 && max_delay == 0 && fail_prob == 0) {
       ref ! msg
     } else if (rand.nextDouble > fail_prob) {
       import context.dispatcher
       val delay = rand_range(min_delay, max_delay).millis
       context.system.scheduler.scheduleOnce(delay)(ref ! msg)
-      arjun(s"Delay of $delay milliseconds put on send of $p to $ref", log)
+      //arjun(s"Delay of $delay milliseconds put on send of $p to $ref", log)
     } else {
-      arjun(s"Dropped message due to unreliable send of $p to $ref", log)
+      //arjun(s"Dropped message due to unreliable send of $p to $ref", log)
     }
   }
 
@@ -93,15 +103,16 @@ object Utils {
     log: Boolean = true
   )(implicit context: ActorContext, logContext: ArjunContext): Unit = {
     val p = toPrint.getOrElse(msg.toString)
-    if (min_delay == 0 && max_delay == 0 && fail_prob == 0) {
+    val node = toNode(ref, Node("", 0))
+    if (exceptions(node) || min_delay == 0 && max_delay == 0 && fail_prob == 0) {
       ref ! msg
     } else if (rand.nextDouble > fail_prob) {
       import context.dispatcher
       val delay = rand_range(min_delay, max_delay).millis
       context.system.scheduler.scheduleOnce(delay)(ref ! msg)
-      arjun(s"Delay of $delay milliseconds put on send of $p to $ref", log)
+      //arjun(s"Delay of $delay milliseconds put on send of $p to $ref", log)
     } else {
-      arjun(s"Dropped message due to unreliable send of $p to $ref", log)
+      //arjun(s"Dropped message due to unreliable send of $p to $ref", log)
     }
   }
 }

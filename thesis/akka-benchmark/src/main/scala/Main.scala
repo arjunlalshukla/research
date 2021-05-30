@@ -22,10 +22,11 @@ object Main {
 
   def server(args: Iterator[String], node: Node) = {
     val reqInt = args.next().toInt
-    val seeds = args.sliding(2,2).toSeq match {
-      case Seq() => Seq(s"akka://$clusterName@${node.host}:${node.port}")
-      case a => a.map(seq => s"akka://$clusterName@${seq(0)}:${seq(1)}")
+    Utils.exceptions = args.sliding(2,2).toSeq match {
+      case Seq() => Set(node)
+      case a => a.map(seq => Node(seq(0), seq(1).toInt)).toSet
     }
+    val seeds = Utils.exceptions.map(n => s"akka://$clusterName@${n.host}:${n.port}")
 
     val config = ConfigFactory.load(ConfigFactory.parseString(s"""
       akka {
@@ -96,7 +97,7 @@ object Main {
     val max_restart = args.next().toInt
     val argsArray = args.toArray
     val cmds = (node.port + 1).to(node.port + num_procs).map { port =>
-      val cmd = Array("java", "-cp", jar, "Main", node.host, s"$port").appendedAll(argsArray)
+      val cmd = Array("java", "-cp", jar, s"-DFAIL_PROB=${Utils.fail_prob}", "Main", node.host, s"$port").appendedAll(argsArray)
       (port, cmd)
     }
     .toMap
@@ -152,7 +153,8 @@ object Main {
     val clientsPerNode = first(0).toInt
     val dispInt = first(1).toInt
     val reqInt = first(2).toInt
-    // skip the next 2 lines, PeriodicKiller not fully supported yet
+    val fail_prob = first(3).toDouble
+    val report_timeout = first(6).toInt
     val second = lines.next().split("\\s+")
     val server_min_kill = second(0).toInt
     val server_max_kill = second(1).toInt
@@ -186,6 +188,8 @@ object Main {
       reqInt, 
       true, 
       clientsPerNode,
+      fail_prob,
+      report_timeout,
       server_min_kill,
       server_max_kill,
       server_min_restart,
