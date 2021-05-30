@@ -90,19 +90,42 @@ object Main {
   def killer(args: Iterator[String], node: Node) = {
     val jar = args.next()
     val num_procs = args.next().toInt
-    //println(s"$node num procs: $num_procs; ${(node.port + 1).to(node.port + num_procs)}")
+    val min_kill = args.next().toInt
+    val max_kill = args.next().toInt
+    val min_restart = args.next().toInt
+    val max_restart = args.next().toInt
     val argsArray = args.toArray
-    val procs = (node.port + 1).to(node.port + num_procs).map { port =>
-      println(s"$node starting child $port")
+    val cmds = (node.port + 1).to(node.port + num_procs).map { port =>
       val cmd = Array("java", "-cp", jar, "Main", node.host, s"$port").appendedAll(argsArray)
-      val pb = new ProcessBuilder(cmd :_*)
-      val logFile = new File(s"./log/${node.host}-$port.log")
-      logFile.createNewFile()
-      pb.redirectError(logFile)
-      pb.redirectOutput(logFile)
-      pb.start()
+      (port, cmd)
     }
-    procs.foreach(_.waitFor())
+    .toMap
+    val config = ConfigFactory.load(ConfigFactory.parseString(s"""
+      akka {
+        actor {
+          provider = cluster
+          allow-java-serialization = on
+          warn-about-java-serializer-usage = off
+        }
+        remote {
+          artery {
+            #transport = aeron-udp
+            canonical.hostname = ${node.host}
+            canonical.port = ${node.port}
+          }
+        }
+      }
+    """))
+
+    val system = ActorSystem(clusterName, config)
+    system.actorOf(Props(new PeriodicKiller(
+      min_kill,
+      max_kill,
+      min_restart,
+      max_restart,
+      cmds,
+      node
+    )), "killer")
   }
 
   def collector(args: Iterator[String], node: Node) = {
@@ -126,12 +149,20 @@ object Main {
     val file = Source.fromFile(args.next())
     val lines = file.getLines()
     val first = lines.next().split("\\s+")
-    // skip the next 2 lines, PeriodicKiller not fully supported yet
-    lines.next()
-    lines.next()
     val clientsPerNode = first(0).toInt
     val dispInt = first(1).toInt
     val reqInt = first(2).toInt
+    // skip the next 2 lines, PeriodicKiller not fully supported yet
+    val second = lines.next().split("\\s+")
+    val server_min_kill = second(0).toInt
+    val server_max_kill = second(1).toInt
+    val server_min_restart = second(2).toInt
+    val server_max_restart = second(3).toInt
+    val third = lines.next().split("\\s+")
+    val client_min_kill = third(0).toInt
+    val client_max_kill = third(1).toInt
+    val client_min_restart = third(2).toInt
+    val client_max_restart = third(3).toInt
     var servers = ArrayBuffer[Node]()
     var clients = ArrayBuffer[Node]()
     lines.map(_.split("\\s+")).foreach { line =>
@@ -146,7 +177,23 @@ object Main {
     }
 
     val system = ActorSystem(clusterName, config)
-    system.actorOf(Props(
-      new Collector(servers.toSeq, clients.toSeq, jar, node, dispInt, reqInt, true, clientsPerNode)), "collector")
+    system.actorOf(Props(new Collector(
+      servers.toSeq, 
+      clients.toSeq, 
+      jar, 
+      node, 
+      dispInt, 
+      reqInt, 
+      true, 
+      clientsPerNode,
+      server_min_kill,
+      server_max_kill,
+      server_min_restart,
+      server_max_restart,
+      client_min_kill,
+      client_max_kill,
+      client_min_restart,
+      client_max_restart,
+    )), "collector")
   }
 }

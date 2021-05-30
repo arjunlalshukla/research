@@ -69,13 +69,14 @@ case class SubscribeDevices(subscriber: ActorSelection) extends MyCbor
 
 // MessageTypes: IoTBusiness
 case class Manager(port: Int, node: Option[Node]) extends MyCbor
+case class ReqDeviceReport(clock: Long, replyTo: ActorRef) extends MyCbor
 
 // Message Types: Data Center Business
 case class Devices(port: Int, set: Set[ActorSelection], members: TreeSet[Member], devices: DevicesCrdt) extends MyCbor
 case class Increment(device: ActorSelection, amount: Long, sent: Long, recvd: Long) extends MyCbor
 
 // Message Types: Report Receiver
-case class IoTReport(data: Seq[Long]) extends MyCbor
+case class IoTReport(clock: Long, data: Seq[Long]) extends MyCbor
 
 // Message Types: Collector
 case class DCReport(from: ActorSelection, totals: Map[ActorSelection, Long], num_nodes: Int) extends MyCbor

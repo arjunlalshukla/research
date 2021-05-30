@@ -36,7 +36,7 @@ final class DataCenterBusiness(
       val toAdd = newDevices.diff(devices.keySet)
       arjun(s"Devices added: $toAdd")
       val added = toAdd.map { dest => dest ->
-        context.actorOf(Props(new ReportReceiver(dest, self, reqReportInterval)))
+        context.actorOf(Props(new ReportReceiver(dest, self, reqReportInterval, totals(dest))))
       }
       devices = devices -- removed ++ added
     }

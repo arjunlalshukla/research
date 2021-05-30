@@ -15,7 +15,15 @@ final class Collector(
   val displayInterval: Int,
   val reqReportInterval: Int,
   val logNonTotal: Boolean,
-  val clientsPerNode: Int
+  val clientsPerNode: Int,
+  val server_min_kill: Int,
+  val server_max_kill: Int,
+  val server_min_restart: Int,
+  val server_max_restart: Int,
+  val client_min_kill: Int,
+  val client_max_kill: Int,
+  val client_min_restart: Int,
+  val client_max_restart: Int,
 ) extends Actor {
   implicit val logContext = ArjunContext("Collector")
   arjun(s"My path is ${context.self.path.toString}")
@@ -49,7 +57,10 @@ final class Collector(
 
   def ssh_cmd(is_svr: Boolean, node: Node) = {
     val dir = System.getProperty("user.dir")
-    val f = if (is_svr) "1 server 200" else s"$clientsPerNode client 1000"
+    val f = if (is_svr) 
+      s"1 $server_min_kill $server_max_kill $server_min_restart $server_max_restart server 200" 
+    else 
+      s"$clientsPerNode $client_min_kill $client_max_kill $client_min_restart $client_max_restart client 1000"
     val server_list = svrs.map(node => s" ${node.host} ${node.port + 1} ").mkString(" ")
     val cmd = Array("ssh", node.host, s"""
       |cd $dir;
@@ -79,7 +90,8 @@ final class Collector(
       val all = totals.map(_._2._2.values.sum).sum
       val num_nodes = totals.map(x => s"  ${toNode(x._1, id)} -> ${x._2._1}").mkString("\n")
       val since = all - lastPrint
-      println(s"Elapsed: $elapsed; Since Last: $since\n$num_nodes")
+      val rate = all.toDouble / (elapsed.toDouble / 1000)
+      println(s"Elapsed: $elapsed; Total: $all; Rate: $rate; Since Last: $since")
       lastPrint = all
       context.system.scheduler
         .scheduleOnce(displayInterval.millis, self, Display)
