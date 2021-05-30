@@ -55,7 +55,8 @@ final class DataCenterMember(val id: Node) extends Actor {
   def selection(ref: ActorRef): ActorSelection = context.actorSelection(ref.path)
 
   def devicesUpdate(newDevices: DevicesCrdt): Unit = {
-    arjun(s"Devices updated to $newDevices")
+    val str = heartbeatReqSenders.keySet.map(toNode(_, id)).mkString("\n")
+    arjun(s"Devices Updated! Total: ${newDevices.states.size} devices; Responsible for: \n$str")
     devices = newDevices
     notify_subrs()
   }
@@ -71,7 +72,7 @@ final class DataCenterMember(val id: Node) extends Actor {
   // Message Reactions
   def setHeartbeatInterval(from: ActorSelection, hi: HeartbeatInterval): Unit = {
     arjun(s"SetHeartbeatInterval received: $hi from $from")
-    val manager = fromNode(ring.responsibility(from))
+    val manager = fromNode(ring.responsibility(toNode(from, id)))
     if (heartbeatReqSenders.contains(from) || manager == self_as) {
       replicator ! Update(
         devicesKey,
@@ -86,6 +87,7 @@ final class DataCenterMember(val id: Node) extends Actor {
       }
       heartbeatReqSenders(from) ! hi
     } else {
+      arjun(s"Forwarding SetHeartbeatInterval $hi to ${Utils.toNode(manager, id)}")
       unreliableSelection(manager, SetHeartbeatInterval(from, hi))
     }
   }
@@ -141,10 +143,12 @@ final class DataCenterMember(val id: Node) extends Actor {
   }
 
   def amISender(dest: ActorSelection, sender: ActorRef): Unit = {
-    val isManager = self_as == fromNode(ring.responsibility(dest))
+    val isManager = self_as == fromNode(ring.responsibility(toNode(dest, id)))
     val isSender = heartbeatReqSenders.get(dest).contains(sender)
     if (!isManager || !isSender) {
       arjun(s"Killing not-sender for $dest that is $sender")
+      arjun(s"Responsible for: ${heartbeatReqSenders.size} nodes")
+      senderUpdated(heartbeatReqSenders - dest)
       sender ! PoisonPill
     } else {
       arjun(s"Keeping sender for $dest that is $sender")

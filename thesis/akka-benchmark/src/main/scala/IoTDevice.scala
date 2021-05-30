@@ -17,7 +17,7 @@ final class IoTDevice(
   val slowNetTolerance = 0.5
   val phi_threshold = 10.0
   val self_as = context.actorSelection(self.path)
-  val serverLogCapacity = 10
+  val serverLogCapacity = 50
   val subscribers = mutable.Set.empty[ActorSelection]
 
   var server: Option[Node] = None

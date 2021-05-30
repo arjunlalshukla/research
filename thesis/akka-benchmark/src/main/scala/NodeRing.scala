@@ -1,23 +1,24 @@
 import scala.collection.mutable.TreeMap
+import scala.collection.mutable.ArrayBuffer
 
 class NodeRing {
-  private val ring = TreeMap.empty[Int, Node]
+  private var ring = ArrayBuffer.empty[Node]
 
   def insert(node: Node): Unit = {
-    ring.put(node.hashCode, node)
+    ring.append(node)
+    ring.sortInPlace()
   }
 
   def remove(node: Node): Unit = {
-    ring.remove(node.hashCode)
+    ring.remove(ring.indexOf(node))
   }
 
-  def responsibility(o: Object): Node = {
-    val hash = o.hashCode()
-    val rng = ring.rangeFrom(hash)
-    if (rng.isEmpty) {
-      ring.head._2
+  def responsibility(node: Node): Node = {
+    val hash = node.murHash.toInt
+    if (hash < 0) {
+      ring((-hash) % ring.length)
     } else {
-      rng.head._2
+      ring(hash % ring.length)
     }
   }
 }

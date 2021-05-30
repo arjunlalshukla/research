@@ -2,10 +2,31 @@ import akka.actor.{ActorRef, ActorSelection}
 import akka.cluster.ddata.ReplicatedData
 import scala.collection.immutable.TreeSet
 import akka.cluster.Member
+import com.dedipresta.crypto.hash.sha256.Sha256
 
 trait MyCbor
 
-case class Node(host: String, port: Int)
+case class Node(host: String, port: Int) extends Ordered[Node] {
+  lazy val murHash: Long = {
+    val hash = Sha256.hash(s"$host-$port")
+    var res = 0L
+    res |= hash(0).toLong
+    res |= hash(1).toLong << 8
+    res |= hash(2).toLong << 16
+    res |= hash(3).toLong << 24
+    res |= hash(4).toLong << 32
+    res |= hash(5).toLong << 40
+    res |= hash(6).toLong << 48
+    res |= hash(7).toLong << 56
+    res
+  }
+
+  def compare(that: Node): Int = {
+    val cmp = this.host compare that.host
+    if (cmp != 0) cmp
+    else this.port compare that.port
+  }
+}
 case class ArjunContext(s: String)
 case class HeartbeatInterval(clock: Long, interval_millis: Int)
   extends ReplicatedData with Ordered[HeartbeatInterval] {
@@ -48,13 +69,14 @@ case class SubscribeDevices(subscriber: ActorSelection) extends MyCbor
 
 // MessageTypes: IoTBusiness
 case class Manager(port: Int, node: Option[Node]) extends MyCbor
+case class ReqDeviceReport(clock: Long, replyTo: ActorRef) extends MyCbor
 
 // Message Types: Data Center Business
 case class Devices(port: Int, set: Set[ActorSelection], members: TreeSet[Member], devices: DevicesCrdt) extends MyCbor
 case class Increment(device: ActorSelection, amount: Long, sent: Long, recvd: Long) extends MyCbor
 
 // Message Types: Report Receiver
-case class IoTReport(data: Seq[Long]) extends MyCbor
+case class IoTReport(clock: Long, data: Seq[Long]) extends MyCbor
 
 // Message Types: Collector
-case class DCReport(from: ActorSelection, totals: Map[ActorSelection, Long]) extends MyCbor
+case class DCReport(from: ActorSelection, totals: Map[ActorSelection, Long], num_nodes: Int, random: Long) extends MyCbor

@@ -2,6 +2,7 @@ import Utils.{addressString, arjun, toNode}
 import akka.actor.{Actor, ActorRef, ActorSelection, PoisonPill, Props}
 
 import scala.concurrent.duration.DurationInt
+import scala.util.Random
 
 final class DataCenterBusiness(
   val dcMember: ActorRef,
@@ -12,6 +13,7 @@ final class DataCenterBusiness(
   import context.dispatcher
   arjun(s"My path is ${context.self.path.toString}")
   val self_as = context.actorSelection(self.path)
+  val random = Random.nextLong()
 
   var devices = Map.empty[ActorSelection, ActorRef]
   var totals = Map.empty[ActorSelection, Long].withDefaultValue(0L)
@@ -36,14 +38,14 @@ final class DataCenterBusiness(
       val toAdd = newDevices.diff(devices.keySet)
       arjun(s"Devices added: $toAdd")
       val added = toAdd.map { dest => dest ->
-        context.actorOf(Props(new ReportReceiver(dest, self, reqReportInterval)))
+        context.actorOf(Props(new ReportReceiver(dest, self, reqReportInterval, totals(dest))))
       }
       devices = devices -- removed ++ added
     }
     case Increment(device, amount, sent, recvd) =>
       x += amount
       totals += device -> recvd
-    case ReqReport(replyTo) => replyTo ! DCReport(self_as, totals)
+    case ReqReport(replyTo) => replyTo ! DCReport(self_as, totals, devices.size, random)
     case Print => {
       arjun(s"$totals, $x")
       context.system.scheduler.scheduleOnce(

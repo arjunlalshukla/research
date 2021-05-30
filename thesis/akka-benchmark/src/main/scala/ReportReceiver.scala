@@ -6,7 +6,8 @@ import scala.concurrent.duration.DurationInt
 final class ReportReceiver(
   val dest: ActorSelection,
   val supervisor: ActorRef,
-  val req_timeout: Int
+  val req_timeout: Int,
+  var recvd: Long,
 ) extends Actor {
   implicit val logContext = dest.anchorPath.address.host
     .zip(dest.anchorPath.address.port)
@@ -14,33 +15,35 @@ final class ReportReceiver(
     .getOrElse(ArjunContext(s"ReportReceiver ${dest.anchorPath}"))
   arjun(s"My path is ${context.self.path.toString}")
   import context.dispatcher
-  var sent = 1
-  var recvd = 0L
+  var clock: Long = recvd + 1L
 
 
   private[this] case class Tick(seqNum: Long)
 
-  req(1)
+  req(clock)
 
   override def postStop(): Unit = {
     arjun("I'm dying!!!")
   }
 
   def req(num: Long) = {
-    unreliableSelection(dest, ReqReport(self))
+    unreliableSelection(dest, ReqDeviceReport(num, self))
     context.system.scheduler.scheduleOnce(
       req_timeout.millis, self, Tick(num)
     )
   }
 
   def receive: Receive = {
-    case IoTReport(data) => {
+    case IoTReport(msg_clock, data) => {
       recvd += 1
-      supervisor ! Increment(dest, data.sum, sent, recvd)
-      req(sent)
+      supervisor ! Increment(dest, data.sum, clock, recvd)
+      if (msg_clock == clock) {
+        clock += 1
+        req(clock)
+      }
     }
     case Tick(num) => {
-      if (recvd < num) {
+      if (clock == num) {
         req(num)
       }
     }

@@ -4,6 +4,8 @@ import java.io.{File, FileWriter, PrintWriter}
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 import scala.util.Try
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 
 object Utils {
   val clusterName = "AkkaBenchCluster"
@@ -15,6 +17,10 @@ object Utils {
   val logger = props.get("BENCH_LOG_FILE")
     .map(str => new PrintWriter(new FileWriter(str, append)))
     .getOrElse(new PrintWriter(System.out))
+  
+  val started = LocalDateTime.now()
+
+  var exceptions = Set.empty[Node]
 
   val min_delay = props.getOrElse("MIN_DELAY", "0").toIntOption
     .filter(_ >= 0).get
@@ -36,7 +42,8 @@ object Utils {
 
   def arjun(s: Any, toPrint: Boolean = true)(implicit context: ArjunContext): Unit = {
     if (toPrint && loggingOn) {
-      logger.println(s"[     arjun     ][${context.s}] ${s.toString}")
+      val elapsed = ChronoUnit.MILLIS.between(started, LocalDateTime.now()).toDouble / 1000.0
+      logger.println(s"[     arjun     ][${context.s}][$elapsed] ${s.toString}")
       logger.flush()
     }
   }
@@ -56,6 +63,13 @@ object Utils {
       .getOrElse(id)
   }
 
+  def toNode(ref: ActorRef, id: Node): Node = {
+    ref.path.address.host
+      .zip(ref.path.address.port)
+      .map(tup => Node(tup._1, tup._2))
+      .getOrElse(id)
+  }
+
   def unreliableRef(
     ref: ActorRef,
     msg: Any,
@@ -66,15 +80,16 @@ object Utils {
     log: Boolean = true
   )(implicit context: ActorContext, logContext: ArjunContext): Unit = {
     val p = toPrint.getOrElse(msg.toString)
-    if (min_delay == 0 && max_delay == 0 && fail_prob == 0) {
+    val node = toNode(ref, Node("", 0))
+    if (exceptions(node) || min_delay == 0 && max_delay == 0 && fail_prob == 0) {
       ref ! msg
     } else if (rand.nextDouble > fail_prob) {
       import context.dispatcher
       val delay = rand_range(min_delay, max_delay).millis
       context.system.scheduler.scheduleOnce(delay)(ref ! msg)
-      arjun(s"Delay of $delay milliseconds put on send of $p to $ref", log)
+      //arjun(s"Delay of $delay milliseconds put on send of $p to $ref", log)
     } else {
-      arjun(s"Dropped message due to unreliable send of $p to $ref", log)
+      //arjun(s"Dropped message due to unreliable send of $p to $ref", log)
     }
   }
 
@@ -88,15 +103,16 @@ object Utils {
     log: Boolean = true
   )(implicit context: ActorContext, logContext: ArjunContext): Unit = {
     val p = toPrint.getOrElse(msg.toString)
-    if (min_delay == 0 && max_delay == 0 && fail_prob == 0) {
+    val node = toNode(ref, Node("", 0))
+    if (exceptions(node) || min_delay == 0 && max_delay == 0 && fail_prob == 0) {
       ref ! msg
     } else if (rand.nextDouble > fail_prob) {
       import context.dispatcher
       val delay = rand_range(min_delay, max_delay).millis
       context.system.scheduler.scheduleOnce(delay)(ref ! msg)
-      arjun(s"Delay of $delay milliseconds put on send of $p to $ref", log)
+      //arjun(s"Delay of $delay milliseconds put on send of $p to $ref", log)
     } else {
-      arjun(s"Dropped message due to unreliable send of $p to $ref", log)
+      //arjun(s"Dropped message due to unreliable send of $p to $ref", log)
     }
   }
 }
