@@ -4,8 +4,10 @@ import java.io.{File, FileWriter, PrintWriter}
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 import scala.util.Try
+import scala.math.BigInt
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
+import com.dedipresta.crypto.hash.sha256.Sha256
 
 object Utils {
   val clusterName = "AkkaBenchCluster"
@@ -31,6 +33,10 @@ object Utils {
   val fail_prob = props.getOrElse("FAIL_PROB", "0.0").toDoubleOption
     .filter(prob => prob >= 0.0 && prob <= 1.0).get
   arjun(s"Default fail prob is $fail_prob")(logCxt)
+
+  def hashBig(s: String): BigInt = {
+    BigInt(Sha256.hash(s))
+  }
 
   def rand_range(min: Int, max: Int): Int = {
     if (max - min <= 0) {

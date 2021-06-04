@@ -7,19 +7,7 @@ import com.dedipresta.crypto.hash.sha256.Sha256
 trait MyCbor
 
 case class Node(host: String, port: Int) extends Ordered[Node] {
-  lazy val murHash: Long = {
-    val hash = Sha256.hash(s"$host-$port")
-    var res = 0L
-    res |= hash(0).toLong
-    res |= hash(1).toLong << 8
-    res |= hash(2).toLong << 16
-    res |= hash(3).toLong << 24
-    res |= hash(4).toLong << 32
-    res |= hash(5).toLong << 40
-    res |= hash(6).toLong << 48
-    res |= hash(7).toLong << 56
-    res
-  }
+  lazy val murHash = Utils.hashBig(s"$host-$port")
 
   def compare(that: Node): Int = {
     val cmp = this.host compare that.host
